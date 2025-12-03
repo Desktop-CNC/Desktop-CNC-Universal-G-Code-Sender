@@ -28,6 +28,17 @@
             </plugin>
         </plugins>
     </build>
+    <properties>
+        <netbeans.version>RELEASE230</netbeans.version>
+    </properties>
+    <!--repositories>
+        <repository>
+            <id>netbeans</id>
+            <name>NetBeans</name>
+            <url>https://bits.netbeans.org/maven2/</url>
+        </repository>
+    </repositories-->
+
     <dependencies>
         <dependency>
             <groupId>com.willwinder.universalgcodesender</groupId>
@@ -41,47 +52,52 @@
             <version>${project.version}</version>
             <scope>provided</scope>
         </dependency>
-
+        
         <!-- Needed if plugin provides UI using TopComponents -->
         <dependency>
             <groupId>org.netbeans.api</groupId>
             <artifactId>org-openide-dialogs</artifactId>
             <version>${netbeans.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.netbeans.api</groupId>
             <artifactId>org-netbeans-api-annotations-common</artifactId>
             <version>${netbeans.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency> 
             <groupId>org.netbeans.api</groupId>
             <artifactId>org-openide-awt</artifactId>
             <version>${netbeans.version}</version>
-            <type>jar</type>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.netbeans.api</groupId>
             <artifactId>org-openide-windows</artifactId>
             <version>${netbeans.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.netbeans.api</groupId>
             <artifactId>org-openide-util</artifactId>
             <version>${netbeans.version}</version>
-            <type>jar</type>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.openide</groupId>
             <artifactId>org-openide-util-lookup</artifactId>
             <version>${netbeans.version}</version>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.openide</groupId>
             <artifactId>org-openide-util-ui</artifactId>
             <version>${netbeans.version}</version>
+            <scope>provided</scope>
         </dependency>
       
-        <!-- Additional NetBeans API dependencies --> 
+        <!-- Additional NetBeans API dependencies 
         <dependency>
             <groupId>org.netbeans.api</groupId>
             <artifactId>org-netbeans-modules-options-api</artifactId>
@@ -91,6 +107,6 @@
             <groupId>org.netbeans.api</groupId>
             <artifactId>org-netbeans-modules-settings</artifactId>
             <version>${netbeans.version}</version>
-        </dependency>
+        </dependency-->
     </dependencies>
 </project>

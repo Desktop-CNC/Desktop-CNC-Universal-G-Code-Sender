@@ -1,3 +1,11 @@
 Manifest-Version: 1.0
+OpenIDE-Module: com.willwinder.universalgcodesender.test_plugin
+OpenIDE-Module-Name: Test Plugin
+OpenIDE-Module-Specification-Version: 1.0
 OpenIDE-Module-Localizing-Bundle: com/willwinder/universalgcodesender/test_plugin/Bundle.properties
-
+OpenIDE-Module-Module-Dependencies: 
+    com.willwinder.ugs.platform.ugslib,
+    com.willwinder.ugs.platform.ugscore,
+    org.openide.util,
+    org.openide.util.lookup,
+    org.openide.util.ui
