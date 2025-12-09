@@ -112,6 +112,7 @@
     <module>ugs-platform</module>
     <module>ugs-cli</module>
     <module>ugs-fx</module>
+    <module>console_printer_plugin</module>
   </modules>
 
   <!-- global dependencies -->
