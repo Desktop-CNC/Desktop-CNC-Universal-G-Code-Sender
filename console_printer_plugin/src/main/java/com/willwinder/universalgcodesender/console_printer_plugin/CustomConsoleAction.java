@@ -19,12 +19,16 @@ package com.willwinder.universalgcodesender.console_printer_plugin;
 // willwinder plugin imports 
 import com.willwinder.ugs.nbp.lib.lookup.CentralLookup;
 import com.willwinder.universalgcodesender.model.BackendAPI;
+import com.willwinder.universalgcodesender.model.UGSEvent;
+import com.willwinder.universalgcodesender.services.MessageService;
+import com.willwinder.universalgcodesender.listeners.MessageType;
 import com.willwinder.universalgcodesender.listeners.UGSEventListener;
 import javax.swing.AbstractAction;
 import java.util.logging.Logger;
 // 3rd party plugin imports
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.ArrayList;
 import java.util.List;
 import org.openide.awt.ActionReference;
 import org.openide.awt.ActionID;
@@ -50,9 +54,12 @@ import com.willwinder.universalgcodesender.gcode.GcodeState;
  * @brief Represents a custom plugin command template that prints to the console / terminal running UGS Platform. The plugin is installed on UGS Platform, 
  * and then can be found from the drop-down GUI ribbon under "Tools" under "UGS Plugins". Upon clicking the action for this plug-in fro the drop-down menu, logged text is printed. 
  */
-public final class CustomConsoleAction extends AbstractAction implements UGSEventListener, CommandProcessor {
+public final class CustomConsoleAction extends AbstractAction implements UGSEventListener, CommandProcessor
+{
     private static final Logger LOG = Logger.getLogger(CustomConsoleAction.class.getName());
     private final BackendAPI backend;
+    private boolean is_active = false; // flag for plugin activity
+    //private final MessageService messenger = new MessageService(); // sends messages / logs to listeners (i.e. UGS console)
     
     /**
      * @brief Represents an instance of CustomConsoleAction. 
@@ -73,8 +80,29 @@ public final class CustomConsoleAction extends AbstractAction implements UGSEven
     @Override
     public List<String> processCommand(String command, GcodeState state) {
         // write a parser that, given a gcode command, edit it and inject to commands. These edits can reflect tool changer logic
-        return null;
+        List<String> post_cmds = new ArrayList<>();
+        post_cmds.add(command);
+        String s = "PLUGIN: " + command;
+        LOG.info(s);
+        backend.dispatchMessage(MessageType.INFO, "PLUGIN: " + command);
+        return post_cmds;
     }
+    
+    /*
+    
+[INFO] INFO [com.willwinder.universalgcodesender.console_printer_plugin.CustomConsoleAction]: Hello UGS Console! This message uses the UGS internal logging system.
+[INFO] INFO [com.willwinder.universalgcodesender.model.GUIBackend]: Applying new command processor CustomConsoleAction
+[INFO] INFO [com.willwinder.universalgcodesender.console_printer_plugin.CustomConsoleAction]: com.willwinder.universalgcodesender.model.events.SettingChangedEvent@a9574d1
+[INFO] INFO [com.willwinder.universalgcodesender.model.GUIBackend]: Setting gcode file. /home/cncteachinglab/Desktop/faster cam.nc
+[INFO] INFO [com.willwinder.universalgcodesender.model.GUIBackend]: Applying new command processor RunFromProcessor
+[INFO] INFO [com.willwinder.universalgcodesender.console_printer_plugin.CustomConsoleAction]: com.willwinder.universalgcodesender.model.events.FileStateEvent@283def21
+[INFO] INFO [com.willwinder.universalgcodesender.console_printer_plugin.CustomConsoleAction]: com.willwinder.universalgcodesender.model.events.FileStateEvent@1afe9e01
+[INFO] INFO [com.willwinder.universalgcodesender.model.GUIBackend]: Start preprocessing
+[INFO] INFO [com.willwinder.universalgcodesender.model.GUIBackend]: Preprocessing /home/cncteachinglab/Desktop/faster cam.nc to /tmp/13736934894773136751/faster cam.nc_ugs_1765330377767
+[INFO] INFO [com.willwinder.universalgcodesender.console_printer_plugin.CustomConsoleAction]: com.willwinder.universalgcodesender.model.events.SettingChangedEvent@28e878f8
+[INFO] INFO [com.willwinder.universalgcodesender.model.GUIBackend]: Took 2276ms to preprocess
+
+    */
       
     /**
      * Returns information about the current command and its configuration.
@@ -101,13 +129,29 @@ public final class CustomConsoleAction extends AbstractAction implements UGSEven
     public void actionPerformed(ActionEvent event) {
          // --- THIS PRINTS TO THE UGS CONSOLE/OUTPUT WINDOW ---
         LOG.info("Hello UGS Console! This message uses the UGS internal logging system.");
+        is_active = !is_active; // toggle plugin activity upon initiatiing from performing action
         // try to append a g-code pre-processor for (i.e. tool changer)
         try {
-            // append this plugin instance as it implements CommandProcessor 
-            backend.applyCommandProcessor(this);
+            // toggle adding this plugin to G-Code pre-processor pipeline 
+            String status_msg = "";
+            if(is_active) {
+                status_msg = "*** Custom Console Plugin Enabled!\n";
+                backend.applyCommandProcessor(this);
+            } else {
+                status_msg = "*** Custom Console Plugin Disabled!\n";
+                backend.removeCommandProcessor(this);
+            }
+            // successful plugin toggle; send notifying event to UGS
+            backend.dispatchMessage(MessageType.INFO, status_msg);
         } catch(Exception e) {
             // do something if exception thrown
             LOG.warning(e.toString()); // print exception to UGS console as warning
         }
     }
+    
+    @Override
+    public void UGSEvent(UGSEvent event) {
+        LOG.info(event.toString());
+    }
+    
 }
