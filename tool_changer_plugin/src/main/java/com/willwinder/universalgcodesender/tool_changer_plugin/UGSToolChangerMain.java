@@ -78,10 +78,14 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     public List<String> processCommand(String command, GcodeState state) {
         // write a parser that, given a gcode command, edit it and inject to commands. These edits can reflect tool changer logic
         List<String> post_cmds = new ArrayList<>();
+        
+        
+        
         post_cmds.add(command);
-        String s = "PLUGIN: " + command;
-        LOG.info(s);
-        backend.dispatchMessage(MessageType.INFO, "PLUGIN: " + command);
+        
+        
+        // print to UGS plugin console
+        backend.dispatchMessage(MessageType.INFO, "Processed Cmd: " + command + "\n");
         return post_cmds;
     }
     
