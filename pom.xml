@@ -113,6 +113,7 @@
     <module>ugs-cli</module>
     <module>ugs-fx</module>
     <module>console_printer_plugin</module>
+    <module>tool_changer_plugin</module>
   </modules>
 
   <!-- global dependencies -->

@@ -1,0 +1,2 @@
+Manifest-Version: 1.0
+OpenIDE-Module-Localizing-Bundle: com/willwinder/universalgcodesender/tool-changer-plugin/Bundle.properties
