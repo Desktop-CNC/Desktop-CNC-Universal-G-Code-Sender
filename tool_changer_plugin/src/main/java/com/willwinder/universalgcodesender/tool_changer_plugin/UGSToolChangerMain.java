@@ -20,14 +20,16 @@ package com.willwinder.universalgcodesender.tool_changer_plugin;
 import com.willwinder.ugs.nbp.lib.lookup.CentralLookup;
 import com.willwinder.universalgcodesender.model.BackendAPI;
 import com.willwinder.universalgcodesender.model.UGSEvent;
-import com.willwinder.universalgcodesender.services.MessageService;
+import com.willwinder.universalgcodesender.model.UnitUtils;
+import com.willwinder.universalgcodesender.model.UnitUtils.*;
+import com.willwinder.universalgcodesender.model.Position;
 import com.willwinder.universalgcodesender.listeners.MessageType;
 import com.willwinder.universalgcodesender.listeners.UGSEventListener;
+import com.willwinder.universalgcodesender.listeners.ControllerState;
+
 import javax.swing.AbstractAction;
 import java.util.logging.Logger;
-// 3rd party plugin imports
 import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
 import java.util.ArrayList;
 import java.util.List;
 import org.openide.awt.ActionReference;
@@ -58,6 +60,81 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     private final BackendAPI backend;
     private boolean is_active = false; // flag for plugin activity
     
+    private ControllerState ctrlStatus = ControllerState.IDLE;
+    private boolean is_initialized = false;
+    // units the processor are defined by 
+    private Units ATCUnits = Units.INCH;
+    // units currently read by the processor
+    private Units currentUnits = null;
+
+    // pre ATC-op machine states 
+    private GcodeState preATCMachineState = null;
+    private int preATCToolId = 1;
+
+    // hard-coded absolution ATC tool bit positions in INCHES
+    final private Position ATC_POS_1 = new Position(0, 0, 0, ATCUnits);
+    final private Position ATC_POS_2 = new Position(0, 0, 0, ATCUnits);
+    final private Position ATC_POS_3 = new Position(0, 0, 0, ATCUnits);
+    // tavel height for spindle for ATC in INCHES
+    final private double TRAVEL_Z = -2;
+
+    /**
+     * @brief ATC travel z height in current units.
+     * @return The set height to rapid-move spindle for auto-tool-change.
+     */
+    private double getTravelZ() {
+        return TRAVEL_Z * UnitUtils.scaleUnits(ATCUnits, currentUnits);
+    }
+    /**
+     * @brief ATC tool bit 1 position in current units. 
+     * @return The ATC tool bit 1 position.
+     */
+    private Position getATCPos1() {
+        Position pos = new Position(
+            ATC_POS_1.x * UnitUtils.scaleUnits(ATCUnits, currentUnits), 
+            ATC_POS_1.y * UnitUtils.scaleUnits(ATCUnits, currentUnits), 
+            ATC_POS_1.z * UnitUtils.scaleUnits(ATCUnits, currentUnits), 
+            currentUnits);
+        return pos;
+    }
+    /**
+     * @brief ATC tool bit 2 position in current units. 
+     * @return The ATC tool bit 1 position.
+     */
+    private Position getATCPos2() {
+        Position pos = new Position(
+            ATC_POS_2.x * UnitUtils.scaleUnits(ATCUnits, currentUnits), 
+            ATC_POS_2.y * UnitUtils.scaleUnits(ATCUnits, currentUnits), 
+            ATC_POS_2.z * UnitUtils.scaleUnits(ATCUnits, currentUnits), 
+            currentUnits);
+        return pos;
+    }
+    /**
+     * @brief ATC tool bit 3 position in current units. 
+     * @return The ATC tool bit 1 position.
+     */
+    private Position getATCPos3() {
+        Position pos = new Position(
+            ATC_POS_3.x * UnitUtils.scaleUnits(ATCUnits, currentUnits), 
+            ATC_POS_3.y * UnitUtils.scaleUnits(ATCUnits, currentUnits), 
+            ATC_POS_3.z * UnitUtils.scaleUnits(ATCUnits, currentUnits), 
+            currentUnits);
+        return pos;
+    }
+    /**
+     * @brief 
+     * @param toolId
+     * @return
+     */
+    private Position getATCPos(int toolId) {
+        switch (toolId) {
+            case 1: return getATCPos1();
+            case 2: return getATCPos2();
+            case 3: return getATCPos3();
+            default: return null;
+        }
+    }
+    
     /**
      * @brief Creates a UGSToolChangerMain class instance
      */
@@ -68,25 +145,98 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     }
     
     /**
-     * Given a command and the current state of a program returns a replacement
-     * list of commands.
-     * @param command Input gcode.
-     * @param state State of the gcode parser when the command will run.
-     * @return One or more gcode commands to replace the original command with.
+     * @brief Handles generating processed G-Code commands for a auto-tool-change 
+     * to a specified tool. 
+     * @param toolId The specified new tool by ID 
+     * @return
      */
+    private List<String> handleAutoToolChange(int toolId) {
+        List<String> result = new ArrayList<String>();
+        
+        // positions of the tool slots on the tool changer in the mill workspace
+        Position prevATCPos = getATCPos(preATCToolId);
+        Position newATCPos = getATCPos(toolId);
+        Position resumePos = new Position(preATCMachineState.currentPoint);
+
+        // set codes for gcode config
+        result.add("G90");
+        result.add("G17");
+        result.add("G94");
+
+        // spindle travels to old ATC tool's slot
+        result.add(String.format("G0 X%.3f Y%.3f Z%.3f", resumePos.x, resumePos.y, getTravelZ()));
+        result.add(String.format("G0 X%.3f Y%.3f Z%.3f", prevATCPos.x, prevATCPos.y, getTravelZ()));
+        // spindle plunges on old ATC tool's slot
+        result.add("M4 S3500");
+        result.add("G4 P1");
+        result.add(String.format("G1 Z%.3f F200", prevATCPos.z));
+        result.add(String.format("G0 Z%.3f", getTravelZ()));
+
+        // spindle speed zero and dwell
+        result.add("M4 S0");
+        result.add("G4 P1");
+
+        // spindle travels to new ATC tool's slot 
+        result.add(String.format("G0 X%.3f Y%.3f Z%.3f", newATCPos.x, newATCPos.y, getTravelZ()));
+        // spindle plunges on new ATC tool's slot 
+        result.add("M3 S3500");
+        result.add("G4 P1");
+        result.add(String.format("G1 Z%.3f F200", newATCPos.z));
+        result.add(String.format("G0 Z%.3f", getTravelZ()));
+
+        // spindle speed zero and dwell
+        result.add("M5 S0");
+        result.add("G4 P1");
+
+        // spindle travels to resume position
+        result.add(String.format("G0 X%.3f Y%.3f Z%.3f", resumePos.x, resumePos.y, getTravelZ()));
+        result.add(preATCMachineState.toAccessoriesCode()); // feeds and speeds
+        result.add(String.format("G0 X%.3f Y%.3f Z%.3f", resumePos.x, resumePos.y, resumePos.z));
+        // restore machine config codes
+        result.add(preATCMachineState.machineStateCode()); // config codes 
+        // return results
+        return result;
+    }
+    
     @Override
     public List<String> processCommand(String command, GcodeState state) {
-        // write a parser that, given a gcode command, edit it and inject to commands. These edits can reflect tool changer logic
-        List<String> post_cmds = new ArrayList<>();
-        
-        
-        
-        post_cmds.add(command);
-        
-        
-        // print to UGS plugin console
-        backend.dispatchMessage(MessageType.INFO, "Processed Cmd: " + command + "\n");
-        return post_cmds;
+        // save all machine states 
+        preATCMachineState = state.copy();
+        System.out.println(preATCMachineState.currentPoint.getUnits());
+        currentUnits = preATCMachineState.currentPoint.getUnits();
+        // processed commands from incoming `command` args
+        List<String> procCmds = new ArrayList<String>();
+        List<String> autoToolChangeCmds = new ArrayList<String>();
+
+        String preATCTokens = ""; // record unchanged tokens before/after ATC
+        String postATCTokens = "";
+        boolean foundTokenT = false;
+
+        // step through raw command tokens
+        String[] tokens = command.split("(?=[A-Z])");
+        for(String token : tokens) {
+            if(!foundTokenT && token.startsWith("T")) {
+                try {
+                    // run tool-change upon identifying its CAM command
+                    int newToolID =  Integer.parseInt(token.replace("T", ""));
+                    autoToolChangeCmds = handleAutoToolChange(newToolID);
+                    foundTokenT = true;
+                } catch(NumberFormatException e) {
+                    System.out.println(e.toString());
+                }
+            } else if(!foundTokenT && !token.startsWith("T")) {
+                preATCTokens = preATCTokens + token;
+            } else if(foundTokenT) {
+                postATCTokens = postATCTokens + token;
+            }
+        }
+
+        // add processed commands 
+        procCmds.add(preATCTokens);
+        procCmds.addAll(autoToolChangeCmds);
+        procCmds.add(postATCTokens);
+        // return processed commands
+        return procCmds;
     }
     
     /**
