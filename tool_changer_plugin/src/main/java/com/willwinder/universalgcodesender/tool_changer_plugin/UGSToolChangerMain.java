@@ -72,11 +72,11 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     private int preATCToolId = 1;
 
     // hard-coded absolution ATC tool bit positions in INCHES
-    final private Position ATC_POS_1 = new Position(0, 0, 0, ATCUnits);
-    final private Position ATC_POS_2 = new Position(0, 0, 0, ATCUnits);
+    final private Position ATC_POS_1 = new Position(1.806, -5.807, -3.32, ATCUnits);
+    final private Position ATC_POS_2 = new Position(1.806, -5.807, -3.32, ATCUnits);
     final private Position ATC_POS_3 = new Position(0, 0, 0, ATCUnits);
     // tavel height for spindle for ATC in INCHES
-    final private double TRAVEL_Z = -2;
+    final private double TRAVEL_Z = -1;
 
     /**
      * @brief ATC travel z height in current units.
@@ -202,7 +202,7 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     public List<String> processCommand(String command, GcodeState state) {
         // save all machine states 
         preATCMachineState = state.copy();
-        System.out.println(preATCMachineState.currentPoint.getUnits());
+        backend.dispatchMessage(MessageType.INFO, preATCMachineState.currentPoint.getUnits().toString());
         currentUnits = preATCMachineState.currentPoint.getUnits();
         // processed commands from incoming `command` args
         List<String> procCmds = new ArrayList<String>();
@@ -215,6 +215,7 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         // step through raw command tokens
         String[] tokens = command.split("(?=[A-Z])");
         for(String token : tokens) {
+            backend.dispatchMessage(MessageType.INFO, "TOK: " + token);
             if(!foundTokenT && token.startsWith("T")) {
                 try {
                     // run tool-change upon identifying its CAM command
