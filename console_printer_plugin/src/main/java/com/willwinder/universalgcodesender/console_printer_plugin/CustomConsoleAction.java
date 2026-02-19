@@ -70,7 +70,7 @@ public final class CustomConsoleAction extends AbstractAction implements UGSEven
         backend.addUGSEventListener(this);
     }
     
-    /**
+    /** 
      * Given a command and the current state of a program returns a replacement
      * list of commands.
      * @param command Input gcode.

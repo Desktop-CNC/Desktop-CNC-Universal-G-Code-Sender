@@ -16,6 +16,8 @@
  */
 package com.willwinder.universalgcodesender.tool_changer_plugin;
 
+import org.openide.modules.InstalledFileLocator;
+import java.io.File;
 // willwinder plugin imports 
 import com.willwinder.ugs.nbp.lib.lookup.CentralLookup;
 import com.willwinder.universalgcodesender.model.BackendAPI;
@@ -78,6 +80,13 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     // tavel height for spindle for ATC in INCHES
     final private double TRAVEL_Z = -2;
 
+    // executable for native systems (i.e. servo contorl for ATC)
+    private File exec = InstalledFileLocator.getDefault().locate(
+        "bin/exec.exe",
+        "com.willwinder.universalgcodesender.tool_changer_plugin",
+        false
+    );
+    
     /**
      * @brief ATC travel z height in current units.
      * @return The set height to rapid-move spindle for auto-tool-change.
@@ -132,6 +141,24 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
             case 2: return getATCPos2();
             case 3: return getATCPos3();
             default: return null;
+        }
+    }
+    
+    private void runExec() {
+        if(exec != null && exec.exists()) {
+            try {
+                ProcessBuilder builder = new ProcessBuilder(exec.getAbsolutePath(), "--arg1");
+                builder.directory(exec.getParentFile());
+                Process process = builder.start();
+                
+                // blocking-process and return code:
+                int exitCode = process.waitFor();
+                backend.dispatchMessage(MessageType.INFO, "Return Code: " + String.valueOf(exitCode) + "\n");
+            } catch(Exception e) {
+                LOG.warning(e.toString());
+            }
+        } else {
+            backend.dispatchMessage(MessageType.INFO, "No Exec Found!\n");
         }
     }
     
@@ -269,6 +296,7 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
             if(is_active) {
                 status_msg = "*** UGS Tool Changer Plugin Enabled!\n";
                 backend.applyCommandProcessor(this);
+                runExec();
             } else {
                 status_msg = "*** UGS Tool Changer Plugin Disabled!\n";
                 backend.removeCommandProcessor(this);
