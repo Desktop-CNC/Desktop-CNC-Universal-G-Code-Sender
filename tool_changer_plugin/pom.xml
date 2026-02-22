@@ -12,11 +12,27 @@
     <build>
         <plugins>
             <plugin>
-                <groupId>org.apache.netbeans.utilities</groupId>
-                <artifactId>nbm-maven-plugin</artifactId>
-                <version>14.1</version>
-                <extensions>true</extensions>
-            </plugin>
+    <artifactId>maven-resources-plugin</artifactId>
+    <version>3.3.1</version>
+    <executions>
+        <execution>
+            <id>copy-resources</id>
+            <phase>process-resources</phase>
+            <goals>
+                <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+                <outputDirectory>${project.build.directory}/nbm/clusters/extra/bin</outputDirectory>
+                <resources>
+                    <resource>
+                        <directory>src/main/release/bin</directory>
+                        <filtering>false</filtering>
+                    </resource>
+                </resources>
+            </configuration>
+        </execution>
+    </executions>
+</plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
@@ -25,6 +41,17 @@
                     <archive>
                         <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
                     </archive>
+                </configuration>
+            </plugin>
+            <plugin>
+            <groupId>org.apache.netbeans.utilities</groupId>
+            <artifactId>nbm-maven-plugin</artifactId>
+            <version>14.1</version>
+                <extensions>true</extensions>
+                <configuration>
+                    <useReleaseParameters>true</useReleaseParameters>
+                    <clusterName>extra</clusterName>
+                    <verifyRuntime>skip</verifyRuntime>
                 </configuration>
             </plugin>
         </plugins>

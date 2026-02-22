@@ -79,13 +79,6 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     final private Position ATC_POS_3 = new Position(0, 0, 0, ATCUnits);
     // tavel height for spindle for ATC in INCHES
     final private double TRAVEL_Z = -2;
-
-    // executable for native systems (i.e. servo contorl for ATC)
-    private File exec = InstalledFileLocator.getDefault().locate(
-        "bin/exec.exe",
-        "com.willwinder.universalgcodesender.tool_changer_plugin",
-        false
-    );
     
     /**
      * @brief ATC travel z height in current units.
@@ -145,6 +138,35 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     }
     
     private void runExec() {
+        // executable for native systems (i.e. servo contorl for ATC)
+        File exec = InstalledFileLocator.getDefault().locate(
+            "bin/pi_main",
+            "com.willwinder.universalgcodesender.tool_changer_plugin",
+            false
+        );
+        
+        if(exec != null) {
+            backend.dispatchMessage(MessageType.INFO,"exec not null\n");
+        } else {
+            backend.dispatchMessage(MessageType.INFO,"exec==null\n");
+        }
+        if(exec != null && exec.exists()) {
+            backend.dispatchMessage(MessageType.INFO,"exec exists\n");
+        } else {
+            backend.dispatchMessage(MessageType.INFO,"exec does not exist\n");
+        }
+        if(exec != null && exec.exists() && exec.canExecute()) {
+            backend.dispatchMessage(MessageType.INFO,"exec can run +X\n");
+        } else if (exec != null && exec.exists() && !exec.canExecute()) {
+            backend.dispatchMessage(MessageType.INFO,"exec cannot run -X\ntrying to fix: ");
+            exec.setExecutable(true);
+            if (exec.canExecute()) {
+                backend.dispatchMessage(MessageType.INFO, "Fixed!\n");
+            } else {
+                backend.dispatchMessage(MessageType.INFO, "Failed to fix...\n");
+            }
+        }
+        
         if(exec != null && exec.exists()) {
             try {
                 ProcessBuilder builder = new ProcessBuilder(exec.getAbsolutePath(), "--arg1");
