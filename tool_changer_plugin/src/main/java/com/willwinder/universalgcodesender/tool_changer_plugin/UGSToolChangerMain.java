@@ -59,11 +59,11 @@ import com.willwinder.universalgcodesender.gcode.GcodeState;
  */
 public final class UGSToolChangerMain extends AbstractAction implements UGSEventListener, CommandProcessor {
     private static final Logger LOG = Logger.getLogger(UGSToolChangerMain.class.getName());
+    private static final String NBM_RESOURCES_BIN_DIR = "bin/";
+    private boolean isActive = false; // flag for plugin activity
     private final BackendAPI backend;
-    private boolean is_active = false; // flag for plugin activity
     
     private ControllerState ctrlStatus = ControllerState.IDLE;
-    private boolean is_initialized = false;
     // units the processor are defined by 
     private Units ATCUnits = Units.INCH;
     // units currently read by the processor
@@ -310,21 +310,21 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
      */
     @Override
     public void actionPerformed(ActionEvent event) {
-        is_active = !is_active; // toggle plugin activity upon initiatiing from performing action
+        isActive = !isActive; // toggle plugin activity upon initiatiing from performing action
         // try to append a g-code pre-processor for (i.e. tool changer)
         try {
             // toggle adding this plugin to G-Code pre-processor pipeline 
-            String status_msg = "";
-            if(is_active) {
-                status_msg = "*** UGS Tool Changer Plugin Enabled!\n";
+            String statusMsg = "";
+            if(isActive) {
+                statusMsg = "*** UGS Tool Changer Plugin Enabled!\n";
                 backend.applyCommandProcessor(this);
                 runExec();
             } else {
-                status_msg = "*** UGS Tool Changer Plugin Disabled!\n";
+                statusMsg = "*** UGS Tool Changer Plugin Disabled!\n";
                 backend.removeCommandProcessor(this);
             }
             // successful plugin toggle; send notifying event to UGS
-            backend.dispatchMessage(MessageType.INFO, status_msg);
+            backend.dispatchMessage(MessageType.INFO, statusMsg);
         } catch(Exception e) {
             // do something if exception thrown
             LOG.warning(e.toString()); // print exception to UGS console as warning
@@ -333,6 +333,6 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     
     @Override
     public void UGSEvent(UGSEvent event) {
-        LOG.info(event.toString());
+        
     }
 }
