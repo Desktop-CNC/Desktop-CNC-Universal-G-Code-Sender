@@ -19,23 +19,17 @@ package com.willwinder.universalgcodesender.tool_changer_plugin;
 import com.willwinder.ugs.nbp.lib.lookup.CentralLookup;
 import com.willwinder.universalgcodesender.model.BackendAPI;
 import com.willwinder.universalgcodesender.utils.GcodeStreamReader;
-import com.willwinder.universalgcodesender.listeners.ControllerListener;
-import com.willwinder.universalgcodesender.listeners.ControllerState;
-import com.willwinder.universalgcodesender.listeners.ControllerStatus;
 import com.willwinder.universalgcodesender.listeners.MessageType;
 
-import com.willwinder.universalgcodesender.model.Alarm;
-import com.willwinder.universalgcodesender.model.Position;
 import com.willwinder.universalgcodesender.types.GcodeCommand;
 import java.io.File;
 
 /**
- * Represents a live-cache for the G-Code command stream. G-Code commands streaming is the process of 
- * sequentially sending commands from UGS to the CNC machine. The cache is live, as it listens and tracks the
- * next upcoming command. The cache only exists when G-Code is being streamed. 
+ * Represents a cache for the G-Code command stream. G-Code commands streaming is the process of 
+ * sequentially sending commands from UGS to the CNC machine. 
  * @author matthew-papesh
  */
-public class GcodeStreamCache implements ControllerListener {
+public class GcodeStreamCache {
     private final BackendAPI backend;
     private GcodeStreamReader gcodeStreamCache;
     private GcodeCommand nextCommand;
@@ -56,7 +50,7 @@ public class GcodeStreamCache implements ControllerListener {
         try {
            nextCommand = gcodeStreamCache.getNextCommand();
         } catch(Exception e) {
-            backend.dispatchMessage(MessageType.ERROR, "Warning: Failed Failed on GcodeStreamCache.java => " + e.getMessage() + "\n");
+            backend.dispatchMessage(MessageType.ERROR, String.format("Warning: Failed Failed on GcodeStreamCache.java => %s\n", e.getMessage()));
             nextCommand = null;
         }
         
@@ -78,6 +72,9 @@ public class GcodeStreamCache implements ControllerListener {
         }
     }
     
+    /**
+     * @brief 
+     */
     private void resetGcodeStream() {
         if(gcodeStreamCache == null) {
             return;
@@ -88,43 +85,24 @@ public class GcodeStreamCache implements ControllerListener {
             gcodeStreamCache = null;
             nextCommand = null;
         } catch(Exception e) {
-            backend.dispatchMessage(MessageType.ERROR, "Warning: Failed on GcodeStreamCache.java => " + e.getMessage() + "\n");
+            backend.dispatchMessage(MessageType.ERROR, String.format("Warning: Failed on GcodeStreamCache.java => %s\n", e.getMessage()));
             gcodeStreamCache = null;
             nextCommand = null;
         }
     }
     
     /**
-     * Reset the cache 
+     * @brief Creates and opens the cache.
      */
-    @Override
-    public void streamCanceled() {
+    public void open() {
         resetGcodeStream();
-    }
-
-    /**
-     * The file streaming has completed.
-     */
-    @Override
-    public void streamComplete() {
-        resetGcodeStream();
+        fetchGcodeStream();
     }
     
     /**
-     * An event triggered when a stream is started
+     * @brief Reset and close the cache 
      */
-    @Override
-    public void streamStarted() {
-       resetGcodeStream();
-       fetchGcodeStream(); // cache the G-Code stream
+    public void close() {
+        resetGcodeStream();
     }
-    
-    @Override public void commandSkipped(GcodeCommand command) {}
-    @Override public void commandSent(GcodeCommand command) {}
-    @Override public void commandComplete(GcodeCommand command) {}
-    @Override public void streamPaused() {}
-    @Override public void streamResumed() {}
-    @Override public void receivedAlarm(Alarm alarm) {}
-    @Override public void probeCoordinates(Position p) {}
-    @Override public void statusStringListener(ControllerStatus status) {}
 }

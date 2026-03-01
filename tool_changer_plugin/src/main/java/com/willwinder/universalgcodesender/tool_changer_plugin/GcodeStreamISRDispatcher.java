@@ -16,19 +16,17 @@
  */
 package com.willwinder.universalgcodesender.tool_changer_plugin;
 
+
+
 import com.willwinder.ugs.nbp.lib.lookup.CentralLookup;
-import com.willwinder.universalgcodesender.listeners.ControllerState;
 import com.willwinder.universalgcodesender.model.BackendAPI;
-import com.willwinder.universalgcodesender.utils.GcodeStreamReader;
-import java.io.File;
 import java.util.logging.Logger;
+import java.util.List;
+
 import com.willwinder.universalgcodesender.listeners.ControllerStatus;
 import com.willwinder.universalgcodesender.listeners.ControllerListener;
 import com.willwinder.universalgcodesender.model.Alarm;
 import com.willwinder.universalgcodesender.model.Position;
-import com.willwinder.universalgcodesender.model.UGSEvent;
-
-import com.willwinder.universalgcodesender.tool_changer_plugin.GcodeStreamCache;
 import com.willwinder.universalgcodesender.types.GcodeCommand;
 
 /**
@@ -40,7 +38,12 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     private final BackendAPI backend;
     private GcodeStreamCache gcodeStreamCache;
     private GcodeCommand nextCommand;
+    private List<GcodeStreamISR> isrs = new List<GcodeStreamISR>();
+    private int isrIterator = 0;
     
+    /**
+     * @brief Creates a `GcodeStreamISRDispatcher` instance. 
+     */
     public GcodeStreamISRDispatcher() {
         // retrieve backend from UGS Platform
         backend = CentralLookup.getDefault().lookup(BackendAPI.class);
@@ -51,43 +54,66 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     }
     
     /**
-     * An event triggered when a stream is stopped
+     * @brief Stops the ISR dispatcher and its streaming cache. 
      */
-    @Override
-    public void streamCanceled() {
+    private void stop() {
         nextCommand = null;
-    }
-
-    /**
-     * The file streaming has completed.
-     */
-    @Override
-    public void streamComplete() {
-        nextCommand = null;
+        isrIterator = 0;
+        gcodeStreamCache.close();
     }
     
     /**
-     * An event triggered when a stream is started
+     * @brief Starts the ISR dispatcher and its streaming cache
      */
-    @Override
-    public void streamStarted() {
+    private void start() {
+        nextCommand = null;
+        isrIterator = 0;
+        gcodeStreamCache.open();
+    }
+    
+    private GcodeStreamISR getNextTriggeredISR() {
+        for(int i = isrIterator; i < isrs.size(); i++) {
+            
+            if(isrs.get(i).shouldInterrupt(nextCommand.getCommandString())) {
+                isrIterator = i + 1;
+                return isrs.get(i);
+            }
+        }
+        
+        isrIterator = 0;
+        return null;
+    }
+    
+
+    /**
+     * @brief 
+     */
+    private void run() {
         nextCommand = gcodeStreamCache.getNextGcodeCommand();
+        
     }
     
     /**
-     * A command in the stream has been skipped.
+     * @brief 
+     * @param isr 
      */
-    @Override
-    public void commandSkipped(GcodeCommand command) {
-        nextCommand = gcodeStreamCache.getNextGcodeCommand();
+    public void attachISR(GcodeStreamISR isr) {
+        isrs.add(isr);
     }
-
-    /**
-     * A command has successfully been sent to the controller.
-     */
+    
+    /** An event triggered when a stream is stopped */
+    @Override public void streamCanceled() { stop(); }
+    /** The file streaming has completed. */
+    @Override public void streamComplete() { stop(); }
+    /** An event triggered when a stream is started */
+    @Override public void streamStarted() { start(); }
+    /** A command has successfully been sent to the controller. */
+    @Override public void commandSent(GcodeCommand command) { run(); }
+    
+    /** A command in the stream has been skipped. */
     @Override
-    public void commandSent(GcodeCommand command) {
-        nextCommand = gcodeStreamCache.getNextGcodeCommand();
+    public void commandSkipped(GcodeCommand command) { 
+        nextCommand = gcodeStreamCache.getNextGcodeCommand(); 
     }
 
     @Override public void streamPaused() {}
