@@ -22,6 +22,9 @@ import com.willwinder.ugs.nbp.lib.lookup.CentralLookup;
 import com.willwinder.universalgcodesender.model.BackendAPI;
 import java.util.logging.Logger;
 import java.util.List;
+import java.util.EnumMap;
+import java.util.Map;
+import java.util.function.UnaryOperator;
 
 import com.willwinder.universalgcodesender.listeners.ControllerStatus;
 import com.willwinder.universalgcodesender.listeners.ControllerListener;
@@ -33,44 +36,55 @@ import com.willwinder.universalgcodesender.types.GcodeCommand;
  *
  * @author matthew-papesh
  */
-public class GcodeStreamISRDispatcher implements ControllerListener {
+public class GcodeStreamISRDispatcher extends FiniteStateMachine implements ControllerListener {
     private static final Logger LOG = Logger.getLogger(UGSToolChangerMain.class.getName());
     private final BackendAPI backend;
     private GcodeStreamCache gcodeStreamCache;
     private GcodeCommand nextCommand;
-    private List<GcodeStreamISR> isrs = new List<GcodeStreamISR>();
+    private final List<GcodeStreamISR> isrs = new List<GcodeStreamISR>();
+    private GcodeStreamISR triggeredISR = null;
     private int isrIterator = 0;
+    
+    private enum DispatcherState { POLL, QUIESCE, INTERRUPT }
+    private final Map<DispatcherState, UnaryOperator<DispatcherState>> FSM = new EnumMap<>(DispatcherState.class);
+    private DispatcherState currentState = null;
+    
     
     /**
      * @brief Creates a `GcodeStreamISRDispatcher` instance. 
      */
     public GcodeStreamISRDispatcher() {
+        super(DispatcherState.class, DispatcherState.POLL);
         // retrieve backend from UGS Platform
         backend = CentralLookup.getDefault().lookup(BackendAPI.class);
-        // CREATE CACHE BEFORE ADDING LISTENER! => This ensure the cache updates before this dispatcher on ControllerListener
         gcodeStreamCache = new GcodeStreamCache();
         backend.getController().addListener(this);   
         nextCommand = null;
+        
+        // add dispatcher states 
+        addState(DispatcherState.POLL, this::pollISRsState);
+        addState(DispatcherState.QUIESCE, this::quiesceMachineState);
+        addState(DispatcherState.INTERRUPT, this::interruptOnISRState);
+    }
+
+    /**
+     * @brief 
+     * @param stream 
+     */
+    private void setGcodeStream(boolean stream) {
+        try {
+            if(stream && !backend.getController().isStreaming()) {
+                backend.getController().resumeStreaming();
+            } else if(!stream && backend.getController().isStreaming()) {
+                backend.getController().pauseStreaming();
+            }
+        } catch(Exception e) {}
     }
     
     /**
-     * @brief Stops the ISR dispatcher and its streaming cache. 
+     * @brief 
+     * @return 
      */
-    private void stop() {
-        nextCommand = null;
-        isrIterator = 0;
-        gcodeStreamCache.close();
-    }
-    
-    /**
-     * @brief Starts the ISR dispatcher and its streaming cache
-     */
-    private void start() {
-        nextCommand = null;
-        isrIterator = 0;
-        gcodeStreamCache.open();
-    }
-    
     private GcodeStreamISR getNextTriggeredISR() {
         for(int i = isrIterator; i < isrs.size(); i++) {
             
@@ -83,14 +97,68 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
         isrIterator = 0;
         return null;
     }
+     
+    private DispatcherState pollISRsState(FiniteStateMachine s) {
+        triggeredISR = getNextTriggeredISR();
+        // done polling ISRs if returns null
+        if(triggeredISR != null) {
+            // ISR interrupted; halt streaming 
+            setGcodeStream(false); // this will pause commandSent() listener!
+            return DispatcherState.QUIESCE;
+        } else {
+            // no ISR interrupts; continue streaming 
+            setGcodeStream(true); // this will contnue calling commandSent()
+        }
+        // continue polling
+        return DispatcherState.POLL;
+    }
     
-
+    /**
+     * Represents the quiesce dispatcher state. Quiesce is the process 
+     * of safely bringing the CNC machine to a point of stasis by completing all currently 
+     * active G-Code commands. The machine will still be active, but in an idle state once 
+     * quiesce is complete.  
+     * @param s
+     * @return 
+     */
+    private DispatcherState quiesceMachineState(DispatcherState s) {
+        setGcodeStream(false); // ensure machine is not sending new active commands 
+        
+        return null;
+    }
+    
+    private DispatcherState interruptOnISRState(DispatcherState s) {
+        return null;
+    }
+    
     /**
      * @brief 
      */
     private void run() {
-        nextCommand = gcodeStreamCache.getNextGcodeCommand();
-        
+       // nextCommand = gcodeStreamCache.getNextGcodeCommand();
+       runStates();
+    }
+    
+    /**
+     * @brief Stops the ISR dispatcher and its streaming cache. 
+     */
+    private void stop() {
+        nextCommand = null;
+        triggeredISR = null;
+        isrIterator = 0;
+        currentState = DispatcherState.POLL;
+        gcodeStreamCache.close();
+    }
+    
+    /**
+     * @brief Starts the ISR dispatcher and its streaming cache
+     */
+    private void start() {
+        nextCommand = null;
+        triggeredISR = null;
+        isrIterator = 0;
+        currentState = DispatcherState.POLL;
+        gcodeStreamCache.open();
     }
     
     /**
@@ -109,12 +177,8 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     @Override public void streamStarted() { start(); }
     /** A command has successfully been sent to the controller. */
     @Override public void commandSent(GcodeCommand command) { run(); }
-    
     /** A command in the stream has been skipped. */
-    @Override
-    public void commandSkipped(GcodeCommand command) { 
-        nextCommand = gcodeStreamCache.getNextGcodeCommand(); 
-    }
+    @Override public void commandSkipped(GcodeCommand command) { run(); }
 
     @Override public void streamPaused() {}
     @Override public void streamResumed() {}
