@@ -22,6 +22,7 @@ import com.willwinder.ugs.nbp.lib.lookup.CentralLookup;
 import com.willwinder.universalgcodesender.model.BackendAPI;
 import java.util.logging.Logger;
 import java.util.List;
+import java.util.ArrayList;
 
 import com.willwinder.universalgcodesender.listeners.ControllerStatus;
 import com.willwinder.universalgcodesender.listeners.ControllerListener;
@@ -41,7 +42,7 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     private static final Logger LOG = Logger.getLogger(UGSToolChangerMain.class.getName());
     private final BackendAPI backend; 
     private final GcodeStreamCache gcodeStreamCache;
-    private final List<GcodeStreamISR> ISRs = new List<GcodeStreamISR>();
+    private final List<GcodeStreamISR> ISRs = new ArrayList<>();
     // FSM states 
     private enum DispatcherState { POLL, QUIESCE, INTERRUPT }
     
