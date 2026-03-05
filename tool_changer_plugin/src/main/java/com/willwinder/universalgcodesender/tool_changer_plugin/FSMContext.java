@@ -58,6 +58,10 @@ public class FSMContext {
         other.CONTEXT = temp;
     }
 
+    public void putAll(FSMContext other) {
+        CONTEXT.putAll(other.CONTEXT);
+    }
+    
     /**
      * @brief Clears all data from the context. 
      */

@@ -37,7 +37,6 @@ public class GcodeStreamCache {
     public GcodeStreamCache() {
          // retrieve backend from UGS Platform
         backend = CentralLookup.getDefault().lookup(BackendAPI.class);
-        backend.getController().addListener(this);
         gcodeStreamCache = null;
         nextCommand = null;
     } 

@@ -59,11 +59,26 @@ import com.willwinder.universalgcodesender.gcode.GcodeState;
  */
 public final class UGSToolChangerMain extends AbstractAction implements UGSEventListener, CommandProcessor {
     private static final Logger LOG = Logger.getLogger(UGSToolChangerMain.class.getName());
-    private static final String NBM_RESOURCES_BIN_DIR = "bin/";
     private boolean isActive = false; // flag for plugin activity
     private final BackendAPI backend;
     
-    private ControllerState ctrlStatus = ControllerState.IDLE;
+    // handles UGS-level G-Code ISRs
+    private final GcodeStreamISRDispatcher ISRDispatcher = new GcodeStreamISRDispatcher();
+    private GcodeStreamISR moveServoISR = new GcodeStreamISR("servoMoveISR", new GcodeStreamISRBehavior() {
+        @Override 
+        public void onBeforeInterrupt() {
+            backend.dispatchMessage(MessageType.VERBOSE, "BEFORE INTERRUPT");
+        }
+        @Override
+        public void onAfterInterrupt(boolean successfulInterrupt) {
+            backend.dispatchMessage(MessageType.VERBOSE, "AFTER INTERRUPT");
+        }
+        @Override
+        public boolean shouldInterrupt(String gcodeCmd) {
+            return gcodeCmd.contains("M280");
+        }
+    });
+    
     // units the processor are defined by 
     private Units ATCUnits = Units.INCH;
     // units currently read by the processor
@@ -137,53 +152,6 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         }
     }
     
-    private void runExec() {
-        // executable for native systems (i.e. servo contorl for ATC)
-        File exec = InstalledFileLocator.getDefault().locate(
-            "bin/pi_main",
-            "com.willwinder.universalgcodesender.tool_changer_plugin",
-            false
-        );
-        
-        if(exec != null) {
-            backend.dispatchMessage(MessageType.INFO,"exec not null\n");
-        } else {
-            backend.dispatchMessage(MessageType.INFO,"exec==null\n");
-        }
-        if(exec != null && exec.exists()) {
-            backend.dispatchMessage(MessageType.INFO,"exec exists\n");
-        } else {
-            backend.dispatchMessage(MessageType.INFO,"exec does not exist\n");
-        }
-        if(exec != null && exec.exists() && exec.canExecute()) {
-            backend.dispatchMessage(MessageType.INFO,"exec can run +X\n");
-        } else if (exec != null && exec.exists() && !exec.canExecute()) {
-            backend.dispatchMessage(MessageType.INFO,"exec cannot run -X\ntrying to fix: ");
-            exec.setExecutable(true);
-            if (exec.canExecute()) {
-                backend.dispatchMessage(MessageType.INFO, "Fixed!\n");
-            } else {
-                backend.dispatchMessage(MessageType.INFO, "Failed to fix...\n");
-            }
-        }
-        
-        if(exec != null && exec.exists()) {
-            try {
-                ProcessBuilder builder = new ProcessBuilder(exec.getAbsolutePath(), "--arg1");
-                builder.directory(exec.getParentFile());
-                Process process = builder.start();
-                
-                // blocking-process and return code:
-                int exitCode = process.waitFor();
-                backend.dispatchMessage(MessageType.INFO, "Return Code: " + String.valueOf(exitCode) + "\n");
-            } catch(Exception e) {
-                LOG.warning(e.toString());
-            }
-        } else {
-            backend.dispatchMessage(MessageType.INFO, "No Exec Found!\n");
-        }
-    }
-    
     /**
      * @brief Creates a UGSToolChangerMain class instance
      */
@@ -191,6 +159,9 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         // retrieve backend from UGS Platform and attach plugin as a listener to UGS
         backend = CentralLookup.getDefault().lookup(BackendAPI.class);
         backend.addUGSEventListener(this);
+        // handle ISRs 
+        this.moveServoISR.attachInterruptBinary("");
+        this.ISRDispatcher.attachISR(moveServoISR);
     }
     
     /**
@@ -318,7 +289,6 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
             if(isActive) {
                 statusMsg = "*** UGS Tool Changer Plugin Enabled!\n";
                 backend.applyCommandProcessor(this);
-                runExec();
             } else {
                 statusMsg = "*** UGS Tool Changer Plugin Disabled!\n";
                 backend.removeCommandProcessor(this);

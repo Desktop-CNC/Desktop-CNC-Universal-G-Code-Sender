@@ -31,27 +31,30 @@ import java.io.File;
  * strategy interface to the `GcodeStreamISRDispatcher` as a strategy design pattern. 
  * @author matthew-papesh
  */
-public abstract class GcodeStreamISR {
+public class GcodeStreamISR {
     private final BackendAPI backend;
     private File interruptBinary = null;
     private Process interruptProcess = null;
     private final String ISR_ID;
     private final String NBM_PKG_NAME;
+    private final GcodeStreamISRBehavior TRANSITIONS_BEHAVIOR;
     
-    public GcodeStreamISR(String ISR_ID) {
+    public GcodeStreamISR(String ISR_ID, GcodeStreamISRBehavior behavior) {
         // retrieve backend from UGS Platform
         this.backend = CentralLookup.getDefault().lookup(BackendAPI.class);
         this.ISR_ID = ISR_ID; // id of ISR
         ModuleInfo nbm_pkg_info = Modules.getDefault().ownerOf(this.getClass());
         this.NBM_PKG_NAME = nbm_pkg_info.getCodeNameBase();
+        this.TRANSITIONS_BEHAVIOR = behavior;
     }
     
-    public GcodeStreamISR() {
+    public GcodeStreamISR(GcodeStreamISRBehavior behavior) {
         // retrieve backend from UGS Platform
         this.backend = CentralLookup.getDefault().lookup(BackendAPI.class);
         this.ISR_ID = "no_id"; // id of ISR
         ModuleInfo nbm_pkg_info = Modules.getDefault().ownerOf(this.getClass());
         this.NBM_PKG_NAME = nbm_pkg_info.getCodeNameBase();
+        this.TRANSITIONS_BEHAVIOR = behavior;
     }
     
     /**
@@ -65,12 +68,16 @@ public abstract class GcodeStreamISR {
     /**
      * @brief A hook that runs before running the ISR. 
      */
-    public abstract void onBeforeInterrupt();
+    public void onBeforeInterrupt() {
+        TRANSITIONS_BEHAVIOR.onBeforeInterrupt();
+    }
     /**
      * @brief A hook that runs after having successfully run the ISR.
      * @param successfulInterrupt Whether or not the binary interrupt run successfully. 
      */
-    public abstract void onAfterInterrupt(boolean successfulInterrupt);
+    public void onAfterInterrupt(boolean successfulInterrupt) {
+        TRANSITIONS_BEHAVIOR.onAfterInterrupt(successfulInterrupt);
+    }
     
     /**
      * @brief Attaches a binary executable to run during the interrupt of the ISR. 

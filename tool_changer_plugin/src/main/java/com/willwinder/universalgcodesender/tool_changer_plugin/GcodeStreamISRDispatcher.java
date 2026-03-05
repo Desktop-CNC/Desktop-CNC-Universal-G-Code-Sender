@@ -22,9 +22,6 @@ import com.willwinder.ugs.nbp.lib.lookup.CentralLookup;
 import com.willwinder.universalgcodesender.model.BackendAPI;
 import java.util.logging.Logger;
 import java.util.List;
-import java.util.EnumMap;
-import java.util.Map;
-import java.util.function.UnaryOperator;
 
 import com.willwinder.universalgcodesender.listeners.ControllerStatus;
 import com.willwinder.universalgcodesender.listeners.ControllerListener;
@@ -33,43 +30,177 @@ import com.willwinder.universalgcodesender.model.Position;
 import com.willwinder.universalgcodesender.types.GcodeCommand;
 
 /**
- *
+ * @brief Represents an Interrupt Service Routine (ISR) that interrupts G-Code streaming on evaluating a 
+ * G-Code commands before it is sent and streamed. This dispatches all attached `GcodeStreamISR` ISRs and tests 
+ * for interrupts for every G-Code command streamed during a CNC machining process. All ISRs will be run when no
+ * G-Code commands are actively running. 
+ * 
  * @author matthew-papesh
  */
-public class GcodeStreamISRDispatcher extends FiniteStateMachine implements ControllerListener {
+public class GcodeStreamISRDispatcher implements ControllerListener {
     private static final Logger LOG = Logger.getLogger(UGSToolChangerMain.class.getName());
-    private final BackendAPI backend;
-    private GcodeStreamCache gcodeStreamCache;
-    private GcodeCommand nextCommand;
-    private final List<GcodeStreamISR> isrs = new List<GcodeStreamISR>();
-    private GcodeStreamISR triggeredISR = null;
-    private int isrIterator = 0;
-    
+    private final BackendAPI backend; 
+    private final GcodeStreamCache gcodeStreamCache;
+    private final List<GcodeStreamISR> ISRs = new List<GcodeStreamISR>();
+    // FSM states 
     private enum DispatcherState { POLL, QUIESCE, INTERRUPT }
-    private final Map<DispatcherState, UnaryOperator<DispatcherState>> FSM = new EnumMap<>(DispatcherState.class);
-    private DispatcherState currentState = null;
     
+    // tracking parameters 
+    private GcodeCommand nextCommand = null;
+    private int ISRDwellCmdId = -1;
+    private int ISRIterator = -1;
+    private DispatcherState currentState = DispatcherState.POLL;
     
     /**
      * @brief Creates a `GcodeStreamISRDispatcher` instance. 
      */
     public GcodeStreamISRDispatcher() {
-        super(DispatcherState.class, DispatcherState.POLL);
         // retrieve backend from UGS Platform
         backend = CentralLookup.getDefault().lookup(BackendAPI.class);
         gcodeStreamCache = new GcodeStreamCache();
-        backend.getController().addListener(this);   
-        nextCommand = null;
-        
-        // add dispatcher states 
-        addState(DispatcherState.POLL, this::pollISRsState);
-        addState(DispatcherState.QUIESCE, this::quiesceMachineState);
-        addState(DispatcherState.INTERRUPT, this::interruptOnISRState);
+        backend.getController().addListener(this);        
     }
 
     /**
-     * @brief 
-     * @param stream 
+     * @brief Polls untested ISRs to test them. Polling occurs on a G-Code command before it is streamed. 
+     * An ISR is triggered if it meets conditions to be interrupted. The dispatcher state will be found to quiesce if it is enabled, 
+     * otherwise it will be found to interrupt. The dispatcher state will be found to continue to poll should no ISR be triggered. 
+     * Finally, the dispatcher only streams G-Code commands in the poll state. 
+     * 
+     * @note If quiesce is not enabled, the dispatcher will immediately run any triggered ISRs before ensuring there are no active G-Code commands 
+     * @param enableQuiesce Specifies if machine should quiesce on ISR getting triggered.
+     * @return 
+     */
+    private DispatcherState pollISRs(boolean enableQuiesce) {
+        // find next interrupted ISR 
+        ISRIterator = getNextTriggeredISR();
+        if(ISRIterator != -1) { // check for interrupts 
+            if(enableQuiesce) {
+                try { // found a triggered ISR; begin quiesce with dwell cmd
+                    GcodeCommand dwellCmd = backend.getController().createCommand("G4 P0");
+                    ISRDwellCmdId = dwellCmd.getId(); // record and send dwell cmd 
+                    backend.sendGcodeCommand(dwellCmd);
+                    setGcodeStream(false); // halt streamming 
+                } catch(Exception e) {}
+                // begin quiesce listening for dwell
+                return DispatcherState.QUIESCE;
+            }
+            // no need to quiesce; skip to interrupt
+            setGcodeStream(false); // halt streaming
+            return DispatcherState.INTERRUPT;
+        } else {
+            // continue polling on no interrupts 
+            ISRIterator = -1; // reset iter for next G-Code command streamed 
+            setGcodeStream(true); // continue streaming 
+            return DispatcherState.POLL;
+        }
+    }
+    
+    /**
+     * @brief Runs the interrupt logic of the current ISR.
+     * @note This will pause the CNC machine should the ISR fail on running. 
+     */
+    private void interruptOnCurrentISR() {
+        if(ISRIterator >= 0) { // only interrupt on valid ISR
+            try {
+                GcodeStreamISR ISR = ISRs.get(ISRIterator);
+                // run the interrupt 
+                ISR.onBeforeInterrupt();
+                boolean success = ISR.runInterruptBinary();
+                ISR.onAfterInterrupt(success);
+                // handle if interrupt fails 
+                if(!success && !backend.isPaused()) {
+                    backend.pauseResume(); 
+                }        
+            } catch(Exception e) {}
+        }
+    }
+    
+    /**
+     * @brief Runs when a G-Code command has successfully been sent to the controller. 
+     * This method will poll ISRs when the CNC machine has not yet been interrupted. This will listen for interrupts. 
+     * @param command The command that was sent
+     */
+    @Override 
+    public void commandSent(GcodeCommand command) {
+        // get the next cmd to be sent
+        nextCommand = gcodeStreamCache.getNextGcodeCommand();
+        // poll all ISRs on each G-Code cmd streamed 
+        if(currentState == DispatcherState.POLL) {
+            currentState = pollISRs(true);
+        }
+    }
+    
+    /**
+     * @brief Runs when a G-Code command has been completed by the CNC firmware (i.e., grblHAL). 
+     * This method will quiesce the CNC machine and run all triggered ISRs until all have been run. 
+     * This method will re-enable G-Code streaming once all ISR interrupts have been complete.
+     * @param command 
+     */
+    @Override 
+    public void commandComplete(GcodeCommand command) {
+        // listen for when quiesce ends on recieving ISRDwellCmd and its ID
+        if(currentState == DispatcherState.QUIESCE && command.getId() == ISRDwellCmdId) {
+            // the dwell cmd was found; this was last active cmd and just ended
+           currentState = DispatcherState.INTERRUPT; // no active cmds; start interrupt
+        }
+        // run all triggered ISRs while G-Code streaming is interrupted
+        while(currentState == DispatcherState.INTERRUPT) {
+            interruptOnCurrentISR(); // run current triggered-ISR's interrupt   
+            currentState = pollISRs(false); // poll to find next triggered ISR and end the Interrupt state if none is found
+        }
+    }
+    
+    /** 
+     * @brief A command in the stream has been skipped. 
+     */
+    @Override 
+    public void commandSkipped(GcodeCommand command) {
+        // pause CNC machine if ISR dwell cmd was skipped 
+        if(command.getId() == ISRDwellCmdId) {
+            currentState = DispatcherState.POLL; 
+            if(!backend.isPaused()) {
+                try{ backend.pauseResume(); }
+                catch(Exception e) {}
+            }
+        } else {
+            // update next cmd if one was skipped instead of sent over stream
+            nextCommand = gcodeStreamCache.getNextGcodeCommand();
+        }
+    } 
+    
+    /**
+     * @brief Stops the ISR dispatcher and its streaming cache. 
+     */
+    private void stop() {
+        nextCommand = null;
+        ISRIterator = -1;
+        currentState = DispatcherState.POLL;
+        gcodeStreamCache.close();
+    }
+    
+    /**
+     * @brief Starts the ISR dispatcher and its streaming cache
+     */
+    private void start() {
+        nextCommand = null;
+        ISRIterator = -1;
+        currentState = DispatcherState.POLL;
+        gcodeStreamCache.open();
+    }
+    
+    /**
+     * @brief Attaches an ISR to the dispatcher that will run during G-Code streaming. 
+     * @param isr The specified ISR
+     */
+    public void attachISR(GcodeStreamISR isr) {
+        ISRs.add(isr);
+    }
+    
+    /**
+     * @brief Toggles the G-Code stream to be active or inactive. An inactive stream 
+     * will receive completed commands but will not send new commands. 
+     * @param stream Specifies whether or not to stream
      */
     private void setGcodeStream(boolean stream) {
         try {
@@ -80,93 +211,23 @@ public class GcodeStreamISRDispatcher extends FiniteStateMachine implements Cont
             }
         } catch(Exception e) {}
     }
-    
+ 
     /**
-     * @brief 
-     * @return 
+     * @brief All ISRs are evaluated by stepping through the list of attached ISRs. 
+     * This method tracks the next ISR (starting at index zero in list) and returns the 
+     * next ISR index to be triggered for interrupt. If no ISRs are triggered, or all have been, 
+     * the returned index is -1. 
+     * @return Index of triggered ISR; otherwise returns -1.  
      */
-    private GcodeStreamISR getNextTriggeredISR() {
-        for(int i = isrIterator; i < isrs.size(); i++) {
-            
-            if(isrs.get(i).shouldInterrupt(nextCommand.getCommandString())) {
-                isrIterator = i + 1;
-                return isrs.get(i);
+    private int getNextTriggeredISR() {
+        // step through ISRs until one is triggered
+        for(int i = ISRIterator+1; i < ISRs.size(); i++) { 
+            if(ISRs.get(i).shouldInterrupt(nextCommand.getCommandString())) {
+                return i; // return triggered ISR
             }
         }
-        
-        isrIterator = 0;
-        return null;
-    }
-     
-    private DispatcherState pollISRsState(FiniteStateMachine s) {
-        triggeredISR = getNextTriggeredISR();
-        // done polling ISRs if returns null
-        if(triggeredISR != null) {
-            // ISR interrupted; halt streaming 
-            setGcodeStream(false); // this will pause commandSent() listener!
-            return DispatcherState.QUIESCE;
-        } else {
-            // no ISR interrupts; continue streaming 
-            setGcodeStream(true); // this will contnue calling commandSent()
-        }
-        // continue polling
-        return DispatcherState.POLL;
-    }
-    
-    /**
-     * Represents the quiesce dispatcher state. Quiesce is the process 
-     * of safely bringing the CNC machine to a point of stasis by completing all currently 
-     * active G-Code commands. The machine will still be active, but in an idle state once 
-     * quiesce is complete.  
-     * @param s
-     * @return 
-     */
-    private DispatcherState quiesceMachineState(DispatcherState s) {
-        setGcodeStream(false); // ensure machine is not sending new active commands 
-        
-        return null;
-    }
-    
-    private DispatcherState interruptOnISRState(DispatcherState s) {
-        return null;
-    }
-    
-    /**
-     * @brief 
-     */
-    private void run() {
-       // nextCommand = gcodeStreamCache.getNextGcodeCommand();
-       runStates();
-    }
-    
-    /**
-     * @brief Stops the ISR dispatcher and its streaming cache. 
-     */
-    private void stop() {
-        nextCommand = null;
-        triggeredISR = null;
-        isrIterator = 0;
-        currentState = DispatcherState.POLL;
-        gcodeStreamCache.close();
-    }
-    
-    /**
-     * @brief Starts the ISR dispatcher and its streaming cache
-     */
-    private void start() {
-        nextCommand = null;
-        triggeredISR = null;
-        isrIterator = 0;
-        currentState = DispatcherState.POLL;
-        gcodeStreamCache.open();
-    }
-    
-    /**
-     * @brief 
-     * @param isr 
-     */
-    public void attachISR(GcodeStreamISR isr) {
-        isrs.add(isr);
+        // no ISR triggered; return nothing 
+        return -1;
     }
     
     /** An event triggered when a stream is stopped */
@@ -175,15 +236,10 @@ public class GcodeStreamISRDispatcher extends FiniteStateMachine implements Cont
     @Override public void streamComplete() { stop(); }
     /** An event triggered when a stream is started */
     @Override public void streamStarted() { start(); }
-    /** A command has successfully been sent to the controller. */
-    @Override public void commandSent(GcodeCommand command) { run(); }
-    /** A command in the stream has been skipped. */
-    @Override public void commandSkipped(GcodeCommand command) { run(); }
-
+    
     @Override public void streamPaused() {}
     @Override public void streamResumed() {}
     @Override public void receivedAlarm(Alarm alarm) {}
-    @Override public void commandComplete(GcodeCommand command) {}
     @Override public void probeCoordinates(Position p) {}
     @Override public void statusStringListener(ControllerStatus status) {}
 }

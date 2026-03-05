@@ -60,6 +60,10 @@ public class FiniteStateMachine<S extends Enum<S>> {
         return currentState;
     }
 
+    protected <T> void inputToState(String key, T value) {
+        CTX_IN.put(key, value);
+    }
+    
     /**
      * @brief Runs the FSM when iteratively called. 
      */
