@@ -82,7 +82,7 @@ public class GcodeStreamISR {
     /**
      * @brief Attaches a binary executable to run during the interrupt of the ISR. 
      * On successful completion of running the binary, the interrupt will end. 
-     * @note The binary path root directory is at `/src/main/resources`
+     * @note The binary path root directory is at `/src/main/release`
      * @note The binary path must be relative to this root; the binary will be packaged as part of the plugin NBM when built. 
      * @param binaryPath The specified binary path
      */
@@ -122,9 +122,9 @@ public class GcodeStreamISR {
                 builder.directory(interruptBinary.getParentFile());
                 builder.redirectErrorStream(true); // merge stderr into stdout
                 interruptProcess = builder.start();
-                
+                           
                 // blocking-process that runs binary and gives its return code:
-                binaryExitCode = interruptProcess.waitFor(); // waits for binary to complete before continuing here. 
+                binaryExitCode = interruptProcess.waitFor(); // waits for binary to complete before continuing here.              
                 if(binaryExitCode != 0) {
                     throw new Exception(); // failed to complete binary successfully; throw exception
                 }

@@ -67,15 +67,16 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     private GcodeStreamISR moveServoISR = new GcodeStreamISR("servoMoveISR", new GcodeStreamISRBehavior() {
         @Override 
         public void onBeforeInterrupt() {
-            backend.dispatchMessage(MessageType.VERBOSE, "BEFORE INTERRUPT");
+            backend.dispatchMessage(MessageType.INFO, "BEFORE INTERRUPT");
         }
         @Override
         public void onAfterInterrupt(boolean successfulInterrupt) {
-            backend.dispatchMessage(MessageType.VERBOSE, "AFTER INTERRUPT");
+            backend.dispatchMessage(MessageType.INFO, "AFTER INTERRUPT");
         }
         @Override
         public boolean shouldInterrupt(String gcodeCmd) {
-            return gcodeCmd.contains("M280");
+            backend.dispatchMessage(MessageType.INFO, "shouldInt: " + gcodeCmd);
+            return gcodeCmd.contains("M3");
         }
     });
     
@@ -160,7 +161,7 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         backend = CentralLookup.getDefault().lookup(BackendAPI.class);
         backend.addUGSEventListener(this);
         // handle ISRs 
-        this.moveServoISR.attachInterruptBinary("");
+        this.moveServoISR.attachInterruptBinary("bin/pi_main");
         this.ISRDispatcher.attachISR(moveServoISR);
     }
     
@@ -171,7 +172,7 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
      * @return
      */
     private List<String> handleAutoToolChange(int toolId) {
-        List<String> result = new ArrayList<String>();
+        List<String> result = new ArrayList<>();
         
         // positions of the tool slots on the tool changer in the mill workspace
         Position prevATCPos = getATCPos(preATCToolId);
@@ -225,8 +226,8 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         System.out.println(preATCMachineState.currentPoint.getUnits());
         currentUnits = preATCMachineState.currentPoint.getUnits();
         // processed commands from incoming `command` args
-        List<String> procCmds = new ArrayList<String>();
-        List<String> autoToolChangeCmds = new ArrayList<String>();
+        List<String> procCmds = new ArrayList<>();
+        List<String> autoToolChangeCmds = new ArrayList<>();
 
         String preATCTokens = ""; // record unchanged tokens before/after ATC
         String postATCTokens = "";

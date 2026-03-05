@@ -26,6 +26,8 @@ import java.util.ArrayList;
 
 import com.willwinder.universalgcodesender.listeners.ControllerStatus;
 import com.willwinder.universalgcodesender.listeners.ControllerListener;
+import com.willwinder.universalgcodesender.listeners.ControllerState;
+import com.willwinder.universalgcodesender.listeners.MessageType;
 import com.willwinder.universalgcodesender.model.Alarm;
 import com.willwinder.universalgcodesender.model.Position;
 import com.willwinder.universalgcodesender.types.GcodeCommand;
@@ -41,7 +43,7 @@ import com.willwinder.universalgcodesender.types.GcodeCommand;
 public class GcodeStreamISRDispatcher implements ControllerListener {
     private static final Logger LOG = Logger.getLogger(UGSToolChangerMain.class.getName());
     private final BackendAPI backend; 
-    private final GcodeStreamCache gcodeStreamCache;
+    private final GcodeStreamCache gcodeStreamCache = new GcodeStreamCache();
     private final List<GcodeStreamISR> ISRs = new ArrayList<>();
     // FSM states 
     private enum DispatcherState { POLL, QUIESCE, INTERRUPT }
@@ -58,7 +60,6 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     public GcodeStreamISRDispatcher() {
         // retrieve backend from UGS Platform
         backend = CentralLookup.getDefault().lookup(BackendAPI.class);
-        gcodeStreamCache = new GcodeStreamCache();
         backend.getController().addListener(this);        
     }
 
@@ -81,6 +82,8 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
                     GcodeCommand dwellCmd = backend.getController().createCommand("G4 P0");
                     ISRDwellCmdId = dwellCmd.getId(); // record and send dwell cmd 
                     backend.sendGcodeCommand(dwellCmd);
+                    backend.dispatchMessage(MessageType.INFO, "NEXT CMD: " + nextCommand);
+                    backend.getController().sendCommandImmediately(backend.getController().createCommand("!"));
                     setGcodeStream(false); // halt streamming 
                 } catch(Exception e) {}
                 // begin quiesce listening for dwell
@@ -111,7 +114,7 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
                 ISR.onAfterInterrupt(success);
                 // handle if interrupt fails 
                 if(!success && !backend.isPaused()) {
-                    backend.pauseResume(); 
+                    //backend.pauseResume(); 
                 }        
             } catch(Exception e) {}
         }
@@ -124,8 +127,10 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandSent(GcodeCommand command) {
+        if(gcodeStreamCache == null) { return; }
         // get the next cmd to be sent
         nextCommand = gcodeStreamCache.getNextGcodeCommand();
+    
         // poll all ISRs on each G-Code cmd streamed 
         if(currentState == DispatcherState.POLL) {
             currentState = pollISRs(true);
@@ -140,6 +145,7 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandComplete(GcodeCommand command) {
+        if(gcodeStreamCache == null) { return; }
         // listen for when quiesce ends on recieving ISRDwellCmd and its ID
         if(currentState == DispatcherState.QUIESCE && command.getId() == ISRDwellCmdId) {
             // the dwell cmd was found; this was last active cmd and just ended
@@ -157,12 +163,13 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandSkipped(GcodeCommand command) {
+        if(gcodeStreamCache == null) { return; }
         // pause CNC machine if ISR dwell cmd was skipped 
         if(command.getId() == ISRDwellCmdId) {
             currentState = DispatcherState.POLL; 
             if(!backend.isPaused()) {
-                try{ backend.pauseResume(); }
-                catch(Exception e) {}
+                //try{ backend.pauseResume(); }
+                //catch(Exception e) {}
             }
         } else {
             // update next cmd if one was skipped instead of sent over stream
@@ -205,10 +212,12 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     private void setGcodeStream(boolean stream) {
         try {
-            if(stream && !backend.getController().isStreaming()) {
-                backend.getController().resumeStreaming();
-            } else if(!stream && backend.getController().isStreaming()) {
-                backend.getController().pauseStreaming();
+            ControllerState state = backend.getControllerState();
+            boolean isRunning = (state == ControllerState.RUN);
+            if(stream && isRunning) {
+                backend.pauseResume();
+            } else if(!stream && isRunning) {
+                backend.pauseResume();
             }
         } catch(Exception e) {}
     }
