@@ -27,10 +27,15 @@ import java.util.ArrayList;
 import com.willwinder.universalgcodesender.listeners.ControllerStatus;
 import com.willwinder.universalgcodesender.listeners.ControllerListener;
 import com.willwinder.universalgcodesender.listeners.ControllerState;
+import com.willwinder.universalgcodesender.communicator.ICommunicatorListener;
+import com.willwinder.universalgcodesender.connection.Connection;
+import com.willwinder.universalgcodesender.connection.ConnectionDriver;
 import com.willwinder.universalgcodesender.listeners.MessageType;
 import com.willwinder.universalgcodesender.model.Alarm;
 import com.willwinder.universalgcodesender.model.Position;
 import com.willwinder.universalgcodesender.types.GcodeCommand;
+import com.willwinder.universalgcodesender.utils.IGcodeStreamReader;
+import java.io.IOException;
 
 /**
  * @brief Represents an Interrupt Service Routine (ISR) that interrupts G-Code streaming on evaluating a 
@@ -40,7 +45,7 @@ import com.willwinder.universalgcodesender.types.GcodeCommand;
  * 
  * @author matthew-papesh
  */
-public class GcodeStreamISRDispatcher implements ControllerListener {
+public class GcodeStreamISRDispatcher implements ICommunicatorListener {
     private static final Logger LOG = Logger.getLogger(UGSToolChangerMain.class.getName());
     private final BackendAPI backend; 
     private final GcodeStreamCache gcodeStreamCache = new GcodeStreamCache();
@@ -60,7 +65,7 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     public GcodeStreamISRDispatcher() {
         // retrieve backend from UGS Platform
         backend = CentralLookup.getDefault().lookup(BackendAPI.class);
-        backend.getController().addListener(this);        
+        backend.getController().getCommunicator().addListener(this);
     }
 
     /**
@@ -133,8 +138,16 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     
         // poll all ISRs on each G-Code cmd streamed 
         if(currentState == DispatcherState.POLL) {
-            currentState = pollISRs(true);
+            currentState = pollISRs(false);
         }
+        // run all triggered ISRs while G-Code streaming is interrupted
+        while(currentState == DispatcherState.INTERRUPT) {
+            backend.getController().getCommunicator().pauseSend();
+            interruptOnCurrentISR(); // run current triggered-ISR's interrupt   
+            //currentState = pollISRs(false); // poll to find next triggered ISR and end the Interrupt state if none is found
+            currentState = DispatcherState.INTERRUPT;
+        }
+        
     }
     
     /**
@@ -143,9 +156,10 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      * This method will re-enable G-Code streaming once all ISR interrupts have been complete.
      * @param command 
      */
-    @Override 
+    /*@Override 
     public void commandComplete(GcodeCommand command) {
-        if(gcodeStreamCache == null) { return; }
+        return;
+        /*if(gcodeStreamCache == null) { return; }
         // listen for when quiesce ends on recieving ISRDwellCmd and its ID
         if(currentState == DispatcherState.QUIESCE && command.getId() == ISRDwellCmdId) {
             // the dwell cmd was found; this was last active cmd and just ended
@@ -156,7 +170,7 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
             interruptOnCurrentISR(); // run current triggered-ISR's interrupt   
             currentState = pollISRs(false); // poll to find next triggered ISR and end the Interrupt state if none is found
         }
-    }
+    }*/
     
     /** 
      * @brief A command in the stream has been skipped. 
@@ -191,7 +205,9 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      * @brief Starts the ISR dispatcher and its streaming cache
      */
     private void start() {
-        nextCommand = null;
+        try{
+            nextCommand = backend.getController().createCommand("");
+        } catch(Exception e) {}
         ISRIterator = -1;
         currentState = DispatcherState.POLL;
         gcodeStreamCache.open();
@@ -241,15 +257,21 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     }
     
     /** An event triggered when a stream is stopped */
-    @Override public void streamCanceled() { stop(); }
+    //@Override public void streamCanceled() { stop(); }
     /** The file streaming has completed. */
-    @Override public void streamComplete() { stop(); }
+    //@Override public void streamComplete() { stop(); }
     /** An event triggered when a stream is started */
-    @Override public void streamStarted() { start(); }
+    //@Override public void streamStarted() { start(); }
     
-    @Override public void streamPaused() {}
+    /*@Override public void streamPaused() {}
     @Override public void streamResumed() {}
     @Override public void receivedAlarm(Alarm alarm) {}
     @Override public void probeCoordinates(Position p) {}
     @Override public void statusStringListener(ControllerStatus status) {}
+    */
+    
+    @Override public void communicatorPausedOnError() {}
+    @Override public void rawResponseListener(String response) {}
+    @Override public void onConnectionClosed() {}
+   
 }

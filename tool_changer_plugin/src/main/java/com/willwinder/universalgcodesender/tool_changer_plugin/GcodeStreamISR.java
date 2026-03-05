@@ -120,7 +120,7 @@ public class GcodeStreamISR {
                 // create builder process to run executable binary
                 ProcessBuilder builder = new ProcessBuilder(interruptBinary.getAbsolutePath(), "--arg1");
                 builder.directory(interruptBinary.getParentFile());
-                builder.redirectErrorStream(true); // merge stderr into stdout
+                
                 interruptProcess = builder.start();
                            
                 // blocking-process that runs binary and gives its return code:
