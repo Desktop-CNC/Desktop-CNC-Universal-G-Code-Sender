@@ -16,6 +16,8 @@
  */
 package com.willwinder.universalgcodesender.tool_changer_plugin;
 
+import java.util.List;
+import com.willwinder.universalgcodesender.types.GcodeCommand;
 import com.willwinder.ugs.nbp.lib.lookup.CentralLookup;
 import com.willwinder.universalgcodesender.model.BackendAPI;
 import com.willwinder.universalgcodesender.utils.GcodeStreamReader;
@@ -74,26 +76,24 @@ public class GcodeStreamCache {
     /**
      * @brief 
      */
-    private void resetGcodeStream() {
-        if(gcodeStreamCache == null) {
-            return;
-        }
-        
-        try {
-            gcodeStreamCache.close();
-            gcodeStreamCache = null;
-            nextCommand = null;
-        } catch(Exception e) {
-            backend.dispatchMessage(MessageType.ERROR, String.format("Warning: Failed on GcodeStreamCache.java => %s\n", e.getMessage()));
-            gcodeStreamCache = null;
-            nextCommand = null;
+    private void resetGcodeStream() {   
+        if(gcodeStreamCache != null) {
+            try {
+                gcodeStreamCache.close();
+                gcodeStreamCache = null;
+                nextCommand = null;
+            } catch(Exception e) {
+                backend.dispatchMessage(MessageType.ERROR, String.format("Warning: Failed on GcodeStreamCache.java => %s\n", e.getMessage()));
+                gcodeStreamCache = null;
+                nextCommand = null;
+            }
         }
     }
     
     /**
      * @brief Creates and opens the cache.
      */
-    public void open() {
+    public void start() {
         resetGcodeStream();
         fetchGcodeStream();
     }
@@ -101,7 +101,7 @@ public class GcodeStreamCache {
     /**
      * @brief Reset and close the cache 
      */
-    public void close() {
+    public void stop() {
         resetGcodeStream();
     }
 }

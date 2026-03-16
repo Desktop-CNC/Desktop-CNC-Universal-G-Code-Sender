@@ -22,6 +22,7 @@ import com.willwinder.ugs.nbp.lib.lookup.CentralLookup;
 import com.willwinder.universalgcodesender.model.BackendAPI;
 import java.util.logging.Logger;
 import java.util.List;
+import java.util.ArrayList;
 
 import com.willwinder.universalgcodesender.listeners.ControllerStatus;
 import com.willwinder.universalgcodesender.listeners.ControllerListener;
@@ -41,7 +42,7 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     private static final Logger LOG = Logger.getLogger(UGSToolChangerMain.class.getName());
     private final BackendAPI backend; 
     private final GcodeStreamCache gcodeStreamCache;
-    private final List<GcodeStreamISR> ISRs = new List<GcodeStreamISR>();
+    private final List<GcodeStreamISR> ISRs = new ArrayList<GcodeStreamISR>();
     // FSM states 
     private enum DispatcherState { POLL, QUIESCE, INTERRUPT }
     
@@ -72,9 +73,8 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      * @return 
      */
     private DispatcherState pollISRs(boolean enableQuiesce) {
-        // find next interrupted ISR 
         ISRIterator = getNextTriggeredISR();
-        if(ISRIterator != -1) { // check for interrupts 
+        if(ISRIterator != -1) { // check for ISR interrupts 
             if(enableQuiesce) {
                 try { // found a triggered ISR; begin quiesce with dwell cmd
                     GcodeCommand dwellCmd = backend.getController().createCommand("G4 P0");
@@ -82,15 +82,13 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
                     backend.sendGcodeCommand(dwellCmd);
                     setGcodeStream(false); // halt streamming 
                 } catch(Exception e) {}
-                // begin quiesce listening for dwell
                 return DispatcherState.QUIESCE;
             }
-            // no need to quiesce; skip to interrupt
             setGcodeStream(false); // halt streaming
             return DispatcherState.INTERRUPT;
         } else {
             // continue polling on no interrupts 
-            ISRIterator = -1; // reset iter for next G-Code command streamed 
+            ISRIterator = -1;  
             setGcodeStream(true); // continue streaming 
             return DispatcherState.POLL;
         }
@@ -118,17 +116,11 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     
     /**
      * @brief Runs when a G-Code command has successfully been sent to the controller. 
-     * This method will poll ISRs when the CNC machine has not yet been interrupted. This will listen for interrupts. 
      * @param command The command that was sent
      */
     @Override 
     public void commandSent(GcodeCommand command) {
-        // get the next cmd to be sent
-        nextCommand = gcodeStreamCache.getNextGcodeCommand();
-        // poll all ISRs on each G-Code cmd streamed 
-        if(currentState == DispatcherState.POLL) {
-            currentState = pollISRs(true);
-        }
+        
     }
     
     /**
@@ -139,15 +131,12 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandComplete(GcodeCommand command) {
-        // listen for when quiesce ends on recieving ISRDwellCmd and its ID
-        if(currentState == DispatcherState.QUIESCE && command.getId() == ISRDwellCmdId) {
-            // the dwell cmd was found; this was last active cmd and just ended
-           currentState = DispatcherState.INTERRUPT; // no active cmds; start interrupt
-        }
-        // run all triggered ISRs while G-Code streaming is interrupted
-        while(currentState == DispatcherState.INTERRUPT) {
-            interruptOnCurrentISR(); // run current triggered-ISR's interrupt   
-            currentState = pollISRs(false); // poll to find next triggered ISR and end the Interrupt state if none is found
+      
+        currentState = pollISRs(true); // check for interrupted ISR; get state 
+        while(currentState != DispatcherState.POLL) {
+           interruptOnCurrentISR(); // run the interrupted ISR
+            currentState = pollISRs(false); // check remaining ISRs and state 
+            
         }
     }
     
@@ -156,17 +145,7 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandSkipped(GcodeCommand command) {
-        // pause CNC machine if ISR dwell cmd was skipped 
-        if(command.getId() == ISRDwellCmdId) {
-            currentState = DispatcherState.POLL; 
-            if(!backend.isPaused()) {
-                try{ backend.pauseResume(); }
-                catch(Exception e) {}
-            }
-        } else {
-            // update next cmd if one was skipped instead of sent over stream
-            nextCommand = gcodeStreamCache.getNextGcodeCommand();
-        }
+        
     } 
     
     /**
@@ -176,17 +155,18 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
         nextCommand = null;
         ISRIterator = -1;
         currentState = DispatcherState.POLL;
-        gcodeStreamCache.close();
+        gcodeStreamCache.stop();
     }
     
     /**
      * @brief Starts the ISR dispatcher and its streaming cache
      */
     private void start() {
-        nextCommand = null;
         ISRIterator = -1;
         currentState = DispatcherState.POLL;
-        gcodeStreamCache.open();
+        gcodeStreamCache.start();
+        // get the first gcode cmd on start (it is the next cmd until it is called by gcode stream)
+        nextCommand = gcodeStreamCache.getNextGcodeCommand();
     }
     
     /**
