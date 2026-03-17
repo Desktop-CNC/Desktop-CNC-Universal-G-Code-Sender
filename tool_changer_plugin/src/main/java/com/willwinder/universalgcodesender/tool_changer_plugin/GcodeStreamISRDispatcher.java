@@ -16,7 +16,46 @@
  */
 package com.willwinder.universalgcodesender.tool_changer_plugin;
 
+/*
+    Template Servo C++ Code:
+#include <iostream>
+#include <lgpio.h>
+#include <unistd.h>
 
+int main() {
+    int pin = 18;     
+    int chip = 4;     // Pi 5 RP1 controller is usually chip 4
+    
+    // 1. Open the chip
+    int handle = lgGpiochipOpen(chip);
+    if (handle < 0) {
+        std::cerr << "Could not open gpiochip 4. Try: sudo ./pi_main" << std::endl;
+        return 1;
+    }
+
+    // 2. Claim the line for output (This wakes up the pin)
+    if (lgGpioClaimOutput(handle, 0, pin, 0) < 0) {
+        std::cerr << "Could not claim BCM 18. It might be in use." << std::endl;
+        lgGpiochipClose(handle);
+        return 1;
+    }
+
+    std::cout << "Success! Moving Servo on BCM 18..." << std::endl;
+
+    // 3. Servo Commands (handle, gpio, pulseWidth, frequency, offset, cycles)
+    lgTxServo(handle, pin, 1000, 50, 0, 0); 
+    sleep(2);
+    
+    lgTxServo(handle, pin, 2000, 50, 0, 0); 
+    sleep(2);
+
+    // 4. Cleanup
+    lgTxServo(handle, pin, 0, 50, 0, 0); 
+    lgGpiochipClose(handle);
+    
+    return 0;
+}
+*/
 
 import com.willwinder.ugs.nbp.lib.lookup.CentralLookup;
 import com.willwinder.universalgcodesender.model.BackendAPI;
@@ -108,9 +147,10 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
                 ISR.onAfterInterrupt(success);
                 // handle if interrupt fails 
                 if(!success && !backend.isPaused()) {
-                    backend.pauseResume(); 
+                    //backend.pauseResume(); 
                 }        
             } catch(Exception e) {}
+            this.setGcodeStream(true);
         }
     }
     
@@ -131,13 +171,15 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandComplete(GcodeCommand command) {
-      
-        currentState = pollISRs(true); // check for interrupted ISR; get state 
+        
+        currentState = pollISRs(false); // check for interrupted ISR; get state 
         while(currentState != DispatcherState.POLL) {
            interruptOnCurrentISR(); // run the interrupted ISR
-            currentState = pollISRs(false); // check remaining ISRs and state 
+           currentState = pollISRs(false); // check remaining ISRs and state 
             
         }
+        this.nextCommand = this.gcodeStreamCache.getNextGcodeCommand();
+        this.setGcodeStream(true);
     }
     
     /** 

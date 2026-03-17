@@ -157,5 +157,7 @@ public class GcodeStreamISR {
      * @param gcodeCmd The specified G-Code command to interrupt
      * @return Whether or not the ISR can initiate. 
      */
-    public abstract boolean shouldInterrupt(String gcodeCmd);
+    public boolean shouldInterrupt(String gcodeCmd) {
+        return TRANSITIONS_BEHAVIOR.shouldInterrupt(gcodeCmd);
+    }
 }

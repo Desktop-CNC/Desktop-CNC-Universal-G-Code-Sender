@@ -75,7 +75,7 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         }
         @Override
         public boolean shouldInterrupt(String gcodeCmd) {
-            return gcodeCmd.contains("M280");
+            return gcodeCmd.contains("M3");
         }
     });
     
@@ -160,7 +160,7 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         backend = CentralLookup.getDefault().lookup(BackendAPI.class);
         backend.addUGSEventListener(this);
         // handle ISRs 
-        this.moveServoISR.attachInterruptBinary("");
+        this.moveServoISR.attachInterruptBinary("bin/pi_main");
         this.ISRDispatcher.attachISR(moveServoISR);
     }
     
