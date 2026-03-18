@@ -67,11 +67,11 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     private GcodeStreamISR moveServoISR = new GcodeStreamISR("servoMoveISR", new GcodeStreamISRBehavior() {
         @Override 
         public void onBeforeInterrupt() {
-            backend.dispatchMessage(MessageType.VERBOSE, "BEFORE INTERRUPT");
+            backend.dispatchMessage(MessageType.INFO, "BEFORE INTERRUPT");
         }
         @Override
         public void onAfterInterrupt(boolean successfulInterrupt) {
-            backend.dispatchMessage(MessageType.VERBOSE, "AFTER INTERRUPT");
+            backend.dispatchMessage(MessageType.INFO, "AFTER INTERRUPT");
         }
         @Override
         public boolean shouldInterrupt(String gcodeCmd) {

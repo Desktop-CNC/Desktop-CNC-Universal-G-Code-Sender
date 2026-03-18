@@ -65,6 +65,7 @@ import java.util.ArrayList;
 
 import com.willwinder.universalgcodesender.listeners.ControllerStatus;
 import com.willwinder.universalgcodesender.listeners.ControllerListener;
+import com.willwinder.universalgcodesender.listeners.MessageType;
 import com.willwinder.universalgcodesender.model.Alarm;
 import com.willwinder.universalgcodesender.model.Position;
 import com.willwinder.universalgcodesender.types.GcodeCommand;
@@ -111,18 +112,9 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      * @param enableQuiesce Specifies if machine should quiesce on ISR getting triggered.
      * @return 
      */
-    private DispatcherState pollISRs(boolean enableQuiesce) {
+    private DispatcherState pollISRs() {
         ISRIterator = getNextTriggeredISR();
         if(ISRIterator != -1) { // check for ISR interrupts 
-            if(enableQuiesce) {
-                try { // found a triggered ISR; begin quiesce with dwell cmd
-                    GcodeCommand dwellCmd = backend.getController().createCommand("G4 P0");
-                    ISRDwellCmdId = dwellCmd.getId(); // record and send dwell cmd 
-                    backend.sendGcodeCommand(dwellCmd);
-                    setGcodeStream(false); // halt streamming 
-                } catch(Exception e) {}
-                return DispatcherState.QUIESCE;
-            }
             setGcodeStream(false); // halt streaming
             return DispatcherState.INTERRUPT;
         } else {
@@ -147,7 +139,7 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
                 ISR.onAfterInterrupt(success);
                 // handle if interrupt fails 
                 if(!success && !backend.isPaused()) {
-                    //backend.pauseResume(); 
+                    backend.pauseResume(); 
                 }        
             } catch(Exception e) {}
             this.setGcodeStream(true);
@@ -172,14 +164,13 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     @Override 
     public void commandComplete(GcodeCommand command) {
         
-        currentState = pollISRs(false); // check for interrupted ISR; get state 
+        
+        currentState = pollISRs(); // check for interrupted ISR; get state 
         while(currentState != DispatcherState.POLL) {
            interruptOnCurrentISR(); // run the interrupted ISR
-           currentState = pollISRs(false); // check remaining ISRs and state 
-            
+           currentState = pollISRs(); // check remaining ISRs and state 
         }
         this.nextCommand = this.gcodeStreamCache.getNextGcodeCommand();
-        this.setGcodeStream(true);
     }
     
     /** 
@@ -226,8 +217,9 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     private void setGcodeStream(boolean stream) {
         try {
-            if(stream && !backend.getController().isStreaming()) {
+            if(stream) {
                 backend.getController().resumeStreaming();
+                backend.getController().getCommunicator().sendByteImmediately((byte)'~');
             } else if(!stream && backend.getController().isStreaming()) {
                 backend.getController().pauseStreaming();
             }
