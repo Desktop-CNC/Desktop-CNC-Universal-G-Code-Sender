@@ -154,14 +154,8 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandComplete(GcodeCommand command) {
-        // ignore skipped commands; find next command that was sent to machine 
-        int nextCmdIndex = this.gcodeStreamCache.getCommandsRetired() + 1;
-        this.nextCommand = this.gcodeStreamCache.getCommand(nextCmdIndex);
-        while(this.nextCommand != null && this.nextCommand.isSkipped()) {
-            nextCmdIndex += 1;
-            this.nextCommand = this.gcodeStreamCache.getCommand(nextCmdIndex);
-        }
-        
+        this.gcodeStreamCache.completeCommand(command); // MUST CALL THIS FIRST!
+        this.nextCommand = this.gcodeStreamCache.getNextCommandToComplete();
         // evaluate ISRs for next command
         while(!pollISRs()) {
            interruptOnCurrentISR(); // run the interrupted ISR

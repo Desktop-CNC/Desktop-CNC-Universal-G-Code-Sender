@@ -37,6 +37,8 @@ public class GcodeStreamCache {
     private GcodeStreamReader gcodeStreamCache = null;
     private final ArrayList<GcodeCommand> commands = new ArrayList<>();
     private int commandsRetired = 0; // commands "currently" sent or skipped when milling 
+    private int commandsCompleted = 0; // commands "currently" been completed/handled by machine after being sent
+    private int commandsSkippedPastCompletion = 0; // commands "currently" skipped that preceded commands already completed
     
     /**
      * @brief Creates a `GcodeStreamCache` instance. 
@@ -108,6 +110,35 @@ public class GcodeStreamCache {
         commandsRetired += 1;
     } 
     
+    public void completeCommand(GcodeCommand command) {
+        if(commandsCompleted + commandsSkippedPastCompletion >= commands.size()) {
+            return;
+        }
+        // record completed command state 
+        int currentCmdIndex = commandsCompleted + commandsSkippedPastCompletion;
+        commands.get(currentCmdIndex).setSkipped(command.isSkipped());
+        commands.get(currentCmdIndex).setError(command.isError());
+        commands.get(currentCmdIndex).setSent(command.isSent());
+        commands.get(currentCmdIndex).setResponse(command.getResponse());
+        commands.get(currentCmdIndex).setOk(command.isOk());
+        commands.get(currentCmdIndex).setDone(command.isDone());
+        // march/iterate commands completed 
+        commandsCompleted += 1;
+        // march/iterate commands skipped when finding next command to complete 
+        while(commandsCompleted + commandsSkippedPastCompletion < commands.size() 
+              && commands.get(commandsCompleted + commandsSkippedPastCompletion).isSkipped()) {
+            commandsSkippedPastCompletion += 1;
+        }
+    }
+    
+   
+    public GcodeCommand getNextCommandToComplete() {
+        if(commandsCompleted + commandsSkippedPastCompletion >= commands.size()) {
+            return null;
+        }
+        return commands.get(commandsCompleted + commandsSkippedPastCompletion);
+    }
+    
     /**
      * @brief 
      */
@@ -118,6 +149,8 @@ public class GcodeStreamCache {
                 commands.clear();
                 gcodeStreamCache = null;
                 commandsRetired = 0;
+                commandsCompleted = 0;
+                commandsSkippedPastCompletion = 0;
             } catch(Exception e) {
                 backend.dispatchMessage(MessageType.ERROR, String.format("Warning: Failed on GcodeStreamCache.java => %s\n", e.getMessage()));
                 gcodeStreamCache = null;
