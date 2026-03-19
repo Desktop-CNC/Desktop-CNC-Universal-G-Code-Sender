@@ -83,14 +83,11 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     private final BackendAPI backend; 
     private final GcodeStreamCache gcodeStreamCache;
     private final List<GcodeStreamISR> ISRs = new ArrayList<GcodeStreamISR>();
-    // FSM states 
-    private enum DispatcherState { POLL, QUIESCE, INTERRUPT }
     
     // tracking parameters 
     private GcodeCommand nextCommand = null;
     private int ISRDwellCmdId = -1;
     private int ISRIterator = -1;
-    private DispatcherState currentState = DispatcherState.POLL;
     
     /**
      * @brief Creates a `GcodeStreamISRDispatcher` instance. 
@@ -185,7 +182,6 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     private void stop() {
         nextCommand = null;
         ISRIterator = -1;
-        currentState = DispatcherState.POLL;
         gcodeStreamCache.stop();
     }
     
@@ -194,7 +190,6 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     private void start() {
         ISRIterator = -1;
-        currentState = DispatcherState.POLL;
         gcodeStreamCache.start();
     }
     
@@ -215,6 +210,7 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
         try {
             if(stream) {
                 backend.getController().resumeStreaming();
+                // TODO: handle communicator based on firmware type (i.e., grblHAL, etc.)
                 backend.getController().getCommunicator().sendByteImmediately((byte)'~');
             } else if(!stream && backend.getController().isStreaming()) {
                 backend.getController().pauseStreaming();

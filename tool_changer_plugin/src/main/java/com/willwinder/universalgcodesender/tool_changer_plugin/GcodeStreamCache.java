@@ -131,7 +131,6 @@ public class GcodeStreamCache {
         }
     }
     
-   
     public GcodeCommand getNextCommandToComplete() {
         if(commandsCompleted + commandsSkippedPastCompletion >= commands.size()) {
             return null;
