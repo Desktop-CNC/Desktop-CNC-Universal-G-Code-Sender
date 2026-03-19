@@ -112,17 +112,16 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      * @param enableQuiesce Specifies if machine should quiesce on ISR getting triggered.
      * @return 
      */
-    private DispatcherState pollISRs() {
+    private Boolean pollISRs() {
         ISRIterator = getNextTriggeredISR();
         if(ISRIterator != -1) { // check for ISR interrupts 
             setGcodeStream(false); // halt streaming
-            return DispatcherState.INTERRUPT;
-        } else {
-            // continue polling on no interrupts 
-            ISRIterator = -1;  
-            setGcodeStream(true); // continue streaming 
-            return DispatcherState.POLL;
+            return false;
         }
+        // continue polling on no interrupts 
+        ISRIterator = -1;  
+        setGcodeStream(true); // continue streaming 
+        return true;
     }
     
     /**
@@ -146,14 +145,6 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
         }
     }
     
-    /**
-     * @brief Runs when a G-Code command has successfully been sent to the controller. 
-     * @param command The command that was sent
-     */
-    @Override 
-    public void commandSent(GcodeCommand command) {
-        
-    }
     
     /**
      * @brief Runs when a G-Code command has been completed by the CNC firmware (i.e., grblHAL). 
@@ -163,14 +154,18 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandComplete(GcodeCommand command) {
-        
-        
-        currentState = pollISRs(); // check for interrupted ISR; get state 
-        while(currentState != DispatcherState.POLL) {
-           interruptOnCurrentISR(); // run the interrupted ISR
-           currentState = pollISRs(); // check remaining ISRs and state 
+        // ignore skipped commands; find next command that was sent to machine 
+        int nextCmdIndex = this.gcodeStreamCache.getCommandsRetired() + 1;
+        this.nextCommand = this.gcodeStreamCache.getCommand(nextCmdIndex);
+        while(this.nextCommand != null && this.nextCommand.isSkipped()) {
+            nextCmdIndex += 1;
+            this.nextCommand = this.gcodeStreamCache.getCommand(nextCmdIndex);
         }
-        this.nextCommand = this.gcodeStreamCache.getNextGcodeCommand();
+        
+        // evaluate ISRs for next command
+        while(!pollISRs()) {
+           interruptOnCurrentISR(); // run the interrupted ISR
+        }
     }
     
     /** 
@@ -178,8 +173,17 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandSkipped(GcodeCommand command) {
-        
+        this.gcodeStreamCache.retireCommand(command);
     } 
+    
+    /**
+     * @brief Runs when a G-Code command has successfully been sent to the controller. 
+     * @param command The command that was sent
+     */
+    @Override 
+    public void commandSent(GcodeCommand command) {
+        this.gcodeStreamCache.retireCommand(command);
+    }
     
     /**
      * @brief Stops the ISR dispatcher and its streaming cache. 
@@ -198,8 +202,6 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
         ISRIterator = -1;
         currentState = DispatcherState.POLL;
         gcodeStreamCache.start();
-        // get the first gcode cmd on start (it is the next cmd until it is called by gcode stream)
-        nextCommand = gcodeStreamCache.getNextGcodeCommand();
     }
     
     /**
