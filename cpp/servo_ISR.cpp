@@ -14,7 +14,7 @@ class ServoSg90 {
     double SPEED_MAX = 1.0;
     double ACCELERATION_DISTANCE = 0.0;
     // feed-forward position
-    int current_position = 90;
+    double current_position = 90;
     
     /**
      * @brief Initializes the `ServoSg90` instance upon instantiation.
@@ -150,6 +150,51 @@ class ServoSg90 {
             set(microsecondPosition(position_i));
             lguSleep(time_i);
             this->current_position = position_i;
+        }
+    }
+
+    /**
+     * @brief 
+     * @param degrees (int) : 
+     */
+    void normMoveToPosition(int degrees) {
+        // absolute position parameters 
+        double p0 = (double)this->current_position; 
+        double p1 = (double)degrees;
+        double sgn = (p0 <= p1) ? 1.0 : -1.0;
+        // calculate acceleration distance 
+        double D = std::pow(SPEED_MAX, 2.0) / (2.0*ACCELERATION); 
+        if(D > std::abs(p1 - p0)) {
+            D = std::abs(p1 - p0) / 2.0;
+        }
+
+        // distance (d) to run at constant speed 
+        double d = std::abs(p1 - p0) - (2.0*D);
+        double delta_t = 0.1; // step time 
+
+        // calculated times for acceleration 
+        double t_accel = SPEED_MAX / ACCELERATION;
+        double t_const = d / SPEED_MAX; 
+        double t_total = (2.0*t_accel) + t_const;
+
+        // motion parameters 
+        double velocity = 0.0; 
+
+        int partitions = (int)(t_total / delta_t);
+        for(int i=0; i<partitions; i++) {
+            if(time_i < t_accel) {
+                // accelerate 
+                velocity += sgn*delta_t*ACCELERATION;
+            } else if(time_i < t_accel + t_const) {
+                // constant speed
+                velocity = sgn*SPEED_MAX;
+            } else {
+                // decelerate 
+                velocity -= sgn*delta_t*ACCELERATION;
+            }
+            // integrate position and move
+            this->current_position += velocity*delta_t;
+            set(microsecondPosition(this->current_position), delta_t);
         }
     }
 
