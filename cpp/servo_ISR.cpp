@@ -4,10 +4,16 @@
 
 class ServoSg90 {
     private:
+    // servo library parameters 
     const uint CHIP = 4;
     const int HANDLER;
     const int FREQUENCY;
     const uint PIN;
+    // servo motion profile parameters 
+    double ACCELERATION = 0.0; 
+    double SPEED_MAX = 1.0;
+    double ACCELERATION_DISTANCE = 0.0;
+    // feed-forward position
     int current_position = 90;
     
     /**
@@ -25,7 +31,8 @@ class ServoSg90 {
             lgGpiochipClose(HANDLER);
             exit(1);
         }
-        // move to initial position
+        // move to initial motion profile/position
+        setMotionProfile(0.1, 0.01);
         setPosition(current_position);
     }
 
@@ -49,6 +56,8 @@ class ServoSg90 {
         :   HANDLER(lgGpiochipOpen(CHIP)), FREQUENCY(50), PIN(bcm_pin) {
         initialize();
     }
+
+    private: 
 
     /**
      * @brief Sets position in microseconds. This method is blocking 
@@ -83,20 +92,84 @@ class ServoSg90 {
     }
 
     /**
+     * @brief Computes the speed on a trapezoidal motion profile given a 
+     * current position between a known start and end position angles in degrees. 
+     * @param position (double) : The specified current position
+     * @param p0 (double) : The starting position
+     * @param p1 (double) : The end position
+     * @returns The computed speed
+     */
+    double speed(double position, double p0, double p1) {
+        double total_distance = std::abs(p1-p0);
+        double traveled_distance = std::abs(position-p0);
+        double remaining_distance = std::abs(p1-position);
+
+        double p_plus = std::min(this->ACCELERATION_DISTANCE, total_distance / 2.0);
+        double p_minus = total_distance - p_plus;
+
+        if(traveled_distance < p_plus) {
+            return std::pow(2.0*this->ACCELERATION * (traveled_distance + 0.1), 0.5);
+        } else if(traveled_distance >= p_plus && traveled_distance < p_minus) {
+            return this->SPEED_MAX;
+        } else {
+            return std::pow(2.0*this->ACCELERATION * (remaining_distance + 0.1), 0.5);
+        }
+    } 
+
+    public: 
+
+    /**
+     * @brief Sets the motion profile parameters. 
+     * @param MAX_SPEED (double) : The specified maximum speed 
+     * @param ACCELERATION (double) : The specified acceleration
+     */
+    void setMotionProfile(double MAX_SPEED, double ACCELERATION) {
+        this->SPEED_MAX = std::max(0.1, MAX_SPEED); 
+        this->ACCELERATION = std::max(0.01, ACCELERATION);
+        this->ACCELERATION_DISTANCE = (std::pow(this->SPEED_MAX, 2.0)/(2.0*this->ACCELERATION));
+    }
+
+    /**
      * @brief Moves the motor to the specified position.
+     * @note This method is blocking.
      */
     void moveToPosition(int degrees) {
-         
+        // parameters for motion
+        double p0 = (double)this->current_position;
+        double p1 = (double)degrees;
+        double sgn = (p0 <= p1) ? 1.0 : -1.0;
+        // partition parameters 
+        double step = 1.0;
+        int partitions = (int)(std::abs(p1 - p0) / step);
+
+        for(int i=0; i<partitions; i++) {
+            double position_i = p0 + (sgn*i*step);
+            double speed_i = speed(position_i, p0, p1);
+            double time_i = step / std::max(speed_i, 0.001);
+
+            set(microsecondPosition(position_i));
+            lguSleep(time_i);
+            this->current_position = position_i;
+        }
+    }
+
+    /**
+     * @brief Retrieves the current feed-forward position in degrees. 
+     * @returns The current position
+     */
+    int getPosition() {
+        return this->current_position;
     }
 };
 
 ServoSg90 servo = ServoSg90(18, 50);
 
 int main() {
-    servo.setPosition(-90);  
-    sleep(2);
-    servo.setPosition(90);
-
+    servo.setMotionProfile(200, 1500);
     
+    servo.moveToPosition(-90);
+    sleep(2);
+    servo.moveToPosition(90);
+
     return 0;
 }
