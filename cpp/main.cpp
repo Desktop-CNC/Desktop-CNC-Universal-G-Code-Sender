@@ -1,6 +1,7 @@
 #include <iostream>
 #include <lgpio.h>
 #include <unistd.h>
+#include <cmath>
 
 class ServoSg90 {
     private:
@@ -9,13 +10,10 @@ class ServoSg90 {
     const int HANDLER;
     const int FREQUENCY;
     const uint PIN;
-    // servo motion profile parameters 
-    double ACCELERATION = 0.0; 
-    double SPEED_MAX = 1.0;
-    double ACCELERATION_DISTANCE = 0.0;
-    // feed-forward position
-    double current_position = 90;
-    
+    // feed-forward parameters 
+    double current_position = -90;
+    const int MIN_MILLIS = 10; // minimum time to wait for servo to move 
+
     /**
      * @brief Initializes the `ServoSg90` instance upon instantiation.
      */
@@ -31,8 +29,6 @@ class ServoSg90 {
             lgGpiochipClose(HANDLER);
             exit(1);
         }
-        // move to initial motion profile/position
-        setMotionProfile(0.1, 0.01);
         setPosition(current_position);
     }
 
@@ -67,8 +63,19 @@ class ServoSg90 {
      */
     void set(int us, int delay_millis) {
         lgTxServo(HANDLER, PIN, us, FREQUENCY, 0, 0); 
-        lguSleep((double)delay_millis / 1000.0);
+        lguSleep(std::max((double)MIN_MILLIS / 1000.0, (double)delay_millis / 1000.0));
         lgTxPulse(HANDLER, PIN, 0, 0, 0, 0);
+    }
+
+    /**
+     * @brief Sets position in microseconds and holds position. This method is blocking 
+     * and will delay by a specified period of milliseconds.
+     * @param us (int) : The specified microsecond position
+     * @param delay_millis (int) : The specified millisecond delay
+     */
+    void setHold(int us, int delay_millis) {
+        lgTxServo(HANDLER, PIN, us, FREQUENCY, 0, 0); 
+        lguSleep(std::max((double)MIN_MILLIS / 1000.0, (double)delay_millis / 1000.0));
     }
 
     /**
@@ -77,7 +84,7 @@ class ServoSg90 {
      */ 
     void setPosition(int degrees) {
         degrees = std::max(-90, std::min(90, degrees));
-        set(microsecondPosition(degrees), 200);
+        set(microsecondPosition(degrees), 250);
     }
 
     /**
@@ -91,110 +98,28 @@ class ServoSg90 {
         return (((double)degrees / 180.0) + 1.0) * 1000;
     }
 
-    /**
-     * @brief Computes the speed on a trapezoidal motion profile given a 
-     * current position between a known start and end position angles in degrees. 
-     * @param position (double) : The specified current position
-     * @param p0 (double) : The starting position
-     * @param p1 (double) : The end position
-     * @returns The computed speed
-     */
-    double speed(double position, double p0, double p1) {
-        double total_distance = std::abs(p1-p0);
-        double traveled_distance = std::abs(position-p0);
-        double remaining_distance = std::abs(p1-position);
-
-        double p_plus = std::min(this->ACCELERATION_DISTANCE, total_distance / 2.0);
-        double p_minus = total_distance - p_plus;
-
-        if(traveled_distance < p_plus) {
-            return std::pow(2.0*this->ACCELERATION * (traveled_distance + 0.1), 0.5);
-        } else if(traveled_distance >= p_plus && traveled_distance < p_minus) {
-            return this->SPEED_MAX;
-        } else {
-            return std::pow(2.0*this->ACCELERATION * (remaining_distance + 0.1), 0.5);
-        }
-    } 
-
     public: 
 
     /**
-     * @brief Sets the motion profile parameters. 
-     * @param MAX_SPEED (double) : The specified maximum speed 
-     * @param ACCELERATION (double) : The specified acceleration
+     * @brief Drives the motor to a specified position
      */
-    void setMotionProfile(double MAX_SPEED, double ACCELERATION) {
-        this->SPEED_MAX = std::max(0.1, MAX_SPEED); 
-        this->ACCELERATION = std::max(0.01, ACCELERATION);
-        this->ACCELERATION_DISTANCE = (std::pow(this->SPEED_MAX, 2.0)/(2.0*this->ACCELERATION));
-    }
+    void smoothDrive(int degrees, int millis) {
+        double step_degrees = 10.0; // optimal minimial step size in degrees 
+        // too large step-size: no motion control; too small: motor jitters and motion is unstable (hardware limit)
+        double delta_degrees = degrees - this->current_position;
+        double sgn = (delta_degrees >= 0) ? 1.0 : -1.0;
+        double init_degrees = this->current_position;
 
-    /**
-     * @brief Moves the motor to the specified position.
-     * @note This method is blocking.
-     */
-    void moveToPosition(int degrees) {
-        // parameters for motion
-        double p0 = (double)this->current_position;
-        double p1 = (double)degrees;
-        double sgn = (p0 <= p1) ? 1.0 : -1.0;
-        // partition parameters 
-        double step = 1.0;
-        int partitions = (int)(std::abs(p1 - p0) / step);
-
+        int partitions = std::floor(std::abs(delta_degrees) / step_degrees);
         for(int i=0; i<partitions; i++) {
-            double position_i = p0 + (sgn*i*step);
-            double speed_i = speed(position_i, p0, p1);
-            double time_i = step / std::max(speed_i, 0.001);
-
-            set(microsecondPosition(position_i));
-            lguSleep(time_i);
-            this->current_position = position_i;
-        }
-    }
-
-    /**
-     * @brief 
-     * @param degrees (int) : 
-     */
-    void normMoveToPosition(int degrees) {
-        // absolute position parameters 
-        double p0 = (double)this->current_position; 
-        double p1 = (double)degrees;
-        double sgn = (p0 <= p1) ? 1.0 : -1.0;
-        // calculate acceleration distance 
-        double D = std::pow(SPEED_MAX, 2.0) / (2.0*ACCELERATION); 
-        if(D > std::abs(p1 - p0)) {
-            D = std::abs(p1 - p0) / 2.0;
-        }
-
-        // distance (d) to run at constant speed 
-        double d = std::abs(p1 - p0) - (2.0*D);
-        double delta_t = 0.1; // step time 
-
-        // calculated times for acceleration 
-        double t_accel = SPEED_MAX / ACCELERATION;
-        double t_const = d / SPEED_MAX; 
-        double t_total = (2.0*t_accel) + t_const;
-
-        // motion parameters 
-        double velocity = 0.0; 
-
-        int partitions = (int)(t_total / delta_t);
-        for(int i=0; i<partitions; i++) {
-            if(time_i < t_accel) {
-                // accelerate 
-                velocity += sgn*delta_t*ACCELERATION;
-            } else if(time_i < t_accel + t_const) {
-                // constant speed
-                velocity = sgn*SPEED_MAX;
-            } else {
-                // decelerate 
-                velocity -= sgn*delta_t*ACCELERATION;
+            if(i+1 < partitions) { // running through all steps 
+                double pos_i = (sgn*i*step_degrees) + init_degrees;
+                setHold(microsecondPosition(pos_i), millis);
+                this->current_position = pos_i;
+            } else if(i+1 == partitions) { // running last step 
+                set(microsecondPosition(degrees), millis);
+                this->current_position = degrees;
             }
-            // integrate position and move
-            this->current_position += velocity*delta_t;
-            set(microsecondPosition(this->current_position), delta_t);
         }
     }
 
@@ -210,11 +135,12 @@ class ServoSg90 {
 ServoSg90 servo = ServoSg90(18, 50);
 
 int main() {
-    servo.setMotionProfile(200, 1500);
-    
-    servo.moveToPosition(-90);
-    sleep(2);
-    servo.moveToPosition(90);
-
+    sleep(1);
+    while(1) {
+        servo.smoothDrive(90, 20);
+        sleep(1);
+        servo.smoothDrive(-90, 20);
+        sleep(1);
+    }
     return 0;
 }
