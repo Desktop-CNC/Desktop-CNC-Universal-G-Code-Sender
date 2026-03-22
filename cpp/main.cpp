@@ -1,7 +1,12 @@
 #include <iostream>
 #include <lgpio.h>
+#include <initializer_list>
 #include <unistd.h>
+#include <vector>
+#include <thread>
+#include <mutex>
 #include <cmath>
+#include <algorithm>
 
 class ServoSg90 {
     private:
@@ -11,8 +16,9 @@ class ServoSg90 {
     const int FREQUENCY;
     const uint PIN;
     // feed-forward parameters 
-    double current_position = -90;
+    double current_position = 0;
     const int MIN_MILLIS = 10; // minimum time to wait for servo to move 
+    bool is_inverted = false; 
 
     /**
      * @brief Initializes the `ServoSg90` instance upon instantiation.
@@ -37,9 +43,10 @@ class ServoSg90 {
     /**
      * @brief Creates a `ServoSg90` instance. 
      * @param bcm_pin (uint) : The specified Raspberry Pi BCM Pin
+     * @param position (int) : The specified initial position set and to move to
      * @param freq (uint) : The specified servo motor frequency in Hertz
      */
-    ServoSg90(uint bcm_pin, uint freq) 
+    ServoSg90(uint bcm_pin, int position, uint freq) 
         :   HANDLER(lgGpiochipOpen(CHIP)), FREQUENCY(freq), PIN(bcm_pin) {
         initialize();
     }
@@ -47,11 +54,36 @@ class ServoSg90 {
     /**
      * @brief Creates a `ServoSg90` instance. 
      * @param bcm_pin (uint) : The specified Raspberry Pi BCM Pin
+     * @param position (int) : The specified initial position set and to move to
      */
-    ServoSg90(uint bcm_pin) 
+    ServoSg90(uint bcm_pin, int position) 
         :   HANDLER(lgGpiochipOpen(CHIP)), FREQUENCY(50), PIN(bcm_pin) {
         initialize();
     }
+
+    /**
+     * @brief Creates a `ServoSg90` instance. 
+     * @param bcm_pin (uint) : The specified Raspberry Pi BCM Pin
+     * @param position (int) : The specified initial position set and to move to
+     * @param freq (uint) : The specified servo motor frequency in Hertz
+     * @param invert (bool) : Whether or not to invert motor direction
+     */
+    ServoSg90(uint bcm_pin, int position, uint freq, bool invert) 
+        :   HANDLER(lgGpiochipOpen(CHIP)), FREQUENCY(freq), PIN(bcm_pin), is_inverted(invert) {
+        initialize();
+    }
+
+    /**
+     * @brief Creates a `ServoSg90` instance. 
+     * @param bcm_pin (uint) : The specified Raspberry Pi BCM Pin
+     * @param position (int) : The specified initial position set and to move to
+     * @param invert (bool) : Whether or not to invert motor direction 
+     */
+    ServoSg90(uint bcm_pin, int position, bool invert) 
+        :   HANDLER(lgGpiochipOpen(CHIP)), FREQUENCY(50), PIN(bcm_pin), is_inverted(invert) {
+        initialize();
+    }
+
 
     private: 
 
@@ -62,8 +94,7 @@ class ServoSg90 {
      * @param delay_millis (int) : The specified millisecond delay
      */
     void set(int us, int delay_millis) {
-        lgTxServo(HANDLER, PIN, us, FREQUENCY, 0, 0); 
-        lguSleep(std::max((double)MIN_MILLIS / 1000.0, (double)delay_millis / 1000.0));
+        setHold(us, delay_millis);
         lgTxPulse(HANDLER, PIN, 0, 0, 0, 0);
     }
 
@@ -94,6 +125,7 @@ class ServoSg90 {
      * @returns The mapped microsecond position
      */
     int microsecondPosition(int degrees) {
+        degrees = (this->is_inverted) ? -1*degrees : degrees;
         degrees = std::max(-90, std::min(90, degrees)) + 90;
         return (((double)degrees / 180.0) + 1.0) * 1000;
     }
@@ -124,6 +156,23 @@ class ServoSg90 {
     }
 
     /**
+     * @brief Sets if the motor directions are inverted. 
+     * @note Clockwise is positive movement when looking at motor from facing the servo horn.
+     * @param invert (bool) : Specified flag 
+     */
+    void setInvert(bool invert) {
+        this->is_inverted = invert;
+    }
+
+    /**
+     * @brief Retrieves inverted position status 
+     * @returns Whether or not the motor direction is inverted
+     */
+    bool isInverted() {
+        return this->is_inverted;
+    }
+
+    /**
      * @brief Retrieves the current feed-forward position in degrees. 
      * @returns The current position
      */
@@ -132,14 +181,80 @@ class ServoSg90 {
     }
 };
 
-ServoSg90 servo = ServoSg90(18, 50);
+/**
+ * @brief Represents a ServoSg90 motor group where driving each motor is done asynchronously. 
+ * Motors can be synced by calling each one of them to drive and then calling on a motor group dwell.
+ */
+class ServoSg90Group {
+    private: 
+    // unique lists of servos and mutexs for threaded servo drivings 
+    std::vector<std::unique_ptr<ServoSg90>> servos;
+    std::vector<std::unique_ptr<std::mutex>> mtxs;
+    // active threads 
+    std::vector<std::thread> active_threads;
+
+    public: 
+    
+    /**
+     * @brief Creates a `ServoSg90Group` instance. 
+     * @param servos (std::vector<std::unique_ptr<ServoSg90>>) : The specified servos
+     */
+    ServoSg90Group(std::vector<std::unique_ptr<ServoSg90>> servos) 
+        :   servos(std::move(servos)) {
+       for(int i=0; i<this->servos.size(); i++) {
+            mtxs.push_back(std::make_unique<std::mutex>());
+       }
+    }
+
+    /**
+     * @brief Runs a smooth-drive motion for the specified servo. 
+     * @note This method is non-blocking! This is so other motors can be handled in parallel.
+     * @param servo (uint) : The specified servo index to drive 
+     * @param degrees (int) : The specified position to drive to 
+     * @param millis (int) : The spceified amount of time between motion profile steps 
+     */
+    void smoothDrive(uint servo, int degrees, int millis) {
+        if(servo < this->servos.size()) {
+            this->active_threads.emplace_back(std::thread([this, servo, degrees, millis]() {
+                // lock i-th servo on thread to drive it by i-th mutex
+                std::lock_guard<std::mutex> lock(*(mtxs.at(servo)));
+                servos.at(servo)->smoothDrive(degrees, millis);
+            }));
+        }
+    }
+
+    /**
+     * @brief Dwells the servo motor group. This is a blocking method that ends once
+     * all motors in the group have stopped moving.
+     */
+    void dwell() {
+        for(auto& thread : active_threads) {
+            if(thread.joinable()) 
+                thread.join();
+        }
+        // clean thread buffer
+        this->active_threads.clear();
+    }
+};
 
 int main() {
+
+    // motor group
+    std::vector<std::unique_ptr<ServoSg90>> supplier;
+    supplier.push_back(std::make_unique<ServoSg90>(24, 90, 50, true)); // left motor
+    supplier.push_back( std::make_unique<ServoSg90>(23, 90, 50, false)); // right motor
+    ServoSg90Group group = ServoSg90Group(std::move(supplier));
+
+    // enter loop
     sleep(1);
     while(1) {
-        servo.smoothDrive(90, 20);
+        group.smoothDrive(0, 90, 20);
+        group.smoothDrive(1, 90, 20);
+        group.dwell();
         sleep(1);
-        servo.smoothDrive(-90, 20);
+        group.smoothDrive(0, -90, 20);
+        group.smoothDrive(1, -90, 20);
+        group.dwell();
         sleep(1);
     }
     return 0;

@@ -1,5 +1,5 @@
 CXX = g++
-LDFLAGS = -llgpio
+LDFLAGS = -llgpio -pthread
 
 all: pi_main
 
