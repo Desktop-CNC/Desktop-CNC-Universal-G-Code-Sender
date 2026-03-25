@@ -237,25 +237,24 @@ class ServoSg90Group {
     }
 };
 
-int main() {
+int main(int argc, char* argv[]) {
+    // program arguments 
+    int left_servo_pin = atoi(argv[1]);
+    int right_servo_pin = atoi(argv[2]);
+    int init_degrees = atoi(argv[3]);
+    int final_degrees = atoi(argv(4)); 
+    // left servo pin = 24
+    // right servo pin = 23
 
     // motor group
     std::vector<std::unique_ptr<ServoSg90>> supplier;
-    supplier.push_back(std::make_unique<ServoSg90>(24, 90, 50, true)); // left motor
-    supplier.push_back( std::make_unique<ServoSg90>(23, 90, 50, false)); // right motor
+    supplier.push_back(std::make_unique<ServoSg90>(left_servo_pin, init_degrees, 50, true)); // left motor
+    supplier.push_back( std::make_unique<ServoSg90>(right_servo_pin, init_degrees, 50, false)); // right motor
     ServoSg90Group group = ServoSg90Group(std::move(supplier));
 
-    // enter loop
-    sleep(1);
-    while(1) {
-        group.smoothDrive(0, 90, 20);
-        group.smoothDrive(1, 90, 20);
-        group.dwell();
-        sleep(1);
-        group.smoothDrive(0, -90, 20);
-        group.smoothDrive(1, -90, 20);
-        group.dwell();
-        sleep(1);
-    }
+    // run servo motion
+    group.smoothDrive(0, final_degrees, 20);
+    group.smoothDrive(1, final_degrees, 20);
+    group.dwell();
     return 0;
 }
