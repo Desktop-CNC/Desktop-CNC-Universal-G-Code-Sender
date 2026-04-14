@@ -7,6 +7,7 @@
 #include <mutex>
 #include <cmath>
 #include <algorithm>
+#include <chrono>
 
 class ServoSg90 {
     private:
@@ -127,7 +128,7 @@ class ServoSg90 {
     int microsecondPosition(int degrees) {
         degrees = (this->is_inverted) ? -1*degrees : degrees;
         degrees = std::max(-90, std::min(90, degrees)) + 90;
-        return (((double)degrees / 180.0) + 1.0) * 1000;
+        return (((double)degrees / 180.0) * (2400 - 500)) + 500;
     }
 
     public: 
@@ -152,6 +153,7 @@ class ServoSg90 {
                 set(microsecondPosition(degrees), millis);
                 this->current_position = degrees;
             }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
 
@@ -242,7 +244,7 @@ int main(int argc, char* argv[]) {
     int left_servo_pin = atoi(argv[1]);
     int right_servo_pin = atoi(argv[2]);
     int init_degrees = atoi(argv[3]);
-    int final_degrees = atoi(argv(4)); 
+    int final_degrees = atoi(argv[4]); 
     // left servo pin = 24
     // right servo pin = 23
 
@@ -252,9 +254,11 @@ int main(int argc, char* argv[]) {
     supplier.push_back( std::make_unique<ServoSg90>(right_servo_pin, init_degrees, 50, false)); // right motor
     ServoSg90Group group = ServoSg90Group(std::move(supplier));
 
-    // run servo motion
-    group.smoothDrive(0, final_degrees, 20);
-    group.smoothDrive(1, final_degrees, 20);
-    group.dwell();
+    while(1) {// run servo motion
+    group.smoothDrive(0, 90, 30);
+    //group.smoothDrive(1, final_degrees, 20);
+    group.dwell(); std::this_thread::sleep_for(std::chrono::seconds(1));
+    group.smoothDrive(0, -90, 30);
+    group.dwell();std::this_thread::sleep_for(std::chrono::seconds(1));}
     return 0;
 }
