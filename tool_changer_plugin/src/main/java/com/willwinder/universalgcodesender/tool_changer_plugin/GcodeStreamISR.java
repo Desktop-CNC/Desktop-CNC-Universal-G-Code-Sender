@@ -23,7 +23,13 @@ import com.willwinder.universalgcodesender.model.BackendAPI;
 import org.openide.modules.InstalledFileLocator;
 import org.openide.modules.Modules;
 import org.openide.modules.ModuleInfo;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.io.File;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Represents an Interrupt Service Routine (ISR) for G-Code Streaming. This will run 
@@ -35,6 +41,7 @@ public class GcodeStreamISR {
     private final BackendAPI backend;
     private File interruptBinary = null;
     private Process interruptProcess = null;
+    private ArrayList<String> binaryVargs = new ArrayList<>();
     private final String ISR_ID;
     private final String NBM_PKG_NAME;
     private final GcodeStreamISRBehavior TRANSITIONS_BEHAVIOR;
@@ -64,25 +71,24 @@ public class GcodeStreamISR {
     public String getId() {
         return ISR_ID;
     }
-    
     /**
      * @brief A hook that runs before running the ISR. 
      */
-    public void onBeforeInterrupt() {
-        TRANSITIONS_BEHAVIOR.onBeforeInterrupt();
+    public void onBeforeInterrupt(String gcodeCmd) {
+        TRANSITIONS_BEHAVIOR.onBeforeInterrupt(gcodeCmd);
     }
     /**
      * @brief A hook that runs after having successfully run the ISR.
      * @param successfulInterrupt Whether or not the binary interrupt run successfully. 
      */
-    public void onAfterInterrupt(boolean successfulInterrupt) {
-        TRANSITIONS_BEHAVIOR.onAfterInterrupt(successfulInterrupt);
+    public void onAfterInterrupt(String gcodeCmd, boolean successfulInterrupt) {
+        TRANSITIONS_BEHAVIOR.onAfterInterrupt(gcodeCmd, successfulInterrupt);
     }
     
     /**
      * @brief Attaches a binary executable to run during the interrupt of the ISR. 
      * On successful completion of running the binary, the interrupt will end. 
-     * @note The binary path root directory is at `/src/main/resources`
+     * @note The binary path root directory is at `/src/main/releases`
      * @note The binary path must be relative to this root; the binary will be packaged as part of the plugin NBM when built. 
      * @param binaryPath The specified binary path
      */
@@ -93,6 +99,13 @@ public class GcodeStreamISR {
             false
         );
     }  
+    
+    public void setVargs(String vargs) {
+        if(vargs != null && !vargs.isBlank()) {
+            binaryVargs.clear();
+            binaryVargs.addAll(Arrays.asList(vargs.trim().split("\\s+")));
+        }
+    }
     
     /**
      * @brief 
@@ -117,8 +130,11 @@ public class GcodeStreamISR {
             // try to run binary as a blocking program
             int binaryExitCode = -1;
             try {
+                ArrayList<String> command = new ArrayList<>();
+                command.add(interruptBinary.getAbsolutePath());
+                command.addAll(this.binaryVargs);
                 // create builder process to run executable binary
-                ProcessBuilder builder = new ProcessBuilder(interruptBinary.getAbsolutePath(), "--arg1");
+                ProcessBuilder builder = new ProcessBuilder(command);
                 builder.directory(interruptBinary.getParentFile());
                 builder.redirectErrorStream(true); // merge stderr into stdout
                 interruptProcess = builder.start();

@@ -19,23 +19,24 @@ class ServoSg90 {
     // feed-forward parameters 
     double current_position = 0;
     const int MIN_MILLIS = 10; // minimum time to wait for servo to move 
-    bool is_inverted = false; 
+    bool is_inverted = false;
 
     /**
      * @brief Initializes the `ServoSg90` instance upon instantiation.
      */
     void initialize() {
         // ensure gpiochip is functional
-        if (HANDLER < 0) {
+        if(HANDLER < 0) {
             std::cerr << "Could not open gpiochip 4." << std::endl;
             exit(1);
         }
         // ensure servo has claimed its signal pin
-        if (lgGpioClaimOutput(HANDLER, 0, PIN, 0) < 0) {
+        if(lgGpioClaimOutput(HANDLER, 0, PIN, 0) < 0) {
             std::cerr << "Could not claim BCM pin. It might be in use." << std::endl;
             lgGpiochipClose(HANDLER);
             exit(1);
         }
+        
         setPosition(current_position);
     }
 
@@ -137,7 +138,7 @@ class ServoSg90 {
      * @brief Drives the motor to a specified position
      */
     void smoothDrive(int degrees, int millis) {
-        double step_degrees = 10.0; // optimal minimial step size in degrees 
+        double step_degrees = 5.0; // optimal minimial step size in degrees 
         // too large step-size: no motion control; too small: motor jitters and motion is unstable (hardware limit)
         double delta_degrees = degrees - this->current_position;
         double sgn = (delta_degrees >= 0) ? 1.0 : -1.0;
@@ -153,7 +154,6 @@ class ServoSg90 {
                 set(microsecondPosition(degrees), millis);
                 this->current_position = degrees;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
     }
 
@@ -223,7 +223,7 @@ class ServoSg90Group {
                 servos.at(servo)->smoothDrive(degrees, millis);
             }));
         }
-    }
+    } 
 
     /**
      * @brief Dwells the servo motor group. This is a blocking method that ends once
@@ -241,24 +241,41 @@ class ServoSg90Group {
 
 int main(int argc, char* argv[]) {
     // program arguments 
-    int left_servo_pin = atoi(argv[1]);
-    int right_servo_pin = atoi(argv[2]);
-    int init_degrees = atoi(argv[3]);
-    int final_degrees = atoi(argv[4]); 
-    // left servo pin = 24
-    // right servo pin = 23
+    int en_pin = atoi(argv[1]);
+    int left_servo_pin = atoi(argv[2]);
+    int right_servo_pin = atoi(argv[3]);
+    int init_degrees = atoi(argv[4]);
+    int final_degrees = atoi(argv[5]); 
+
+    const int CHIP = 4;
+    const int HANDLER = lgGpiochipOpen(CHIP);
+    // ensure gpiochip is functional
+    if(HANDLER < 0) {
+        std::cerr << "Could not open gpiochip 4." << std::endl;
+        exit(1);
+    }
+    // ensure servo has claimed its signal pin
+    if(lgGpioClaimOutput(HANDLER, 0, en_pin, 0) < 0) {
+        std::cerr << "Could not claim BCM pin. It might be in use." << std::endl;
+        lgGpiochipClose(HANDLER);
+        exit(1);
+    }
+
+    lgGpioWrite(HANDLER, en_pin, 1);
 
     // motor group
     std::vector<std::unique_ptr<ServoSg90>> supplier;
     supplier.push_back(std::make_unique<ServoSg90>(left_servo_pin, init_degrees, 50, true)); // left motor
     supplier.push_back( std::make_unique<ServoSg90>(right_servo_pin, init_degrees, 50, false)); // right motor
     ServoSg90Group group = ServoSg90Group(std::move(supplier));
-
-    while(1) {// run servo motion
-    group.smoothDrive(0, 90, 30);
-    //group.smoothDrive(1, final_degrees, 20);
-    group.dwell(); std::this_thread::sleep_for(std::chrono::seconds(1));
-    group.smoothDrive(0, -90, 30);
-    group.dwell();std::this_thread::sleep_for(std::chrono::seconds(1));}
+    
+    group.smoothDrive(0, final_degrees, 20);
+    group.smoothDrive(1, final_degrees, 20);
+    group.dwell();
+    
+    lgGpioWrite(HANDLER, en_pin, 0);
+    lgGpiochipClose(HANDLER);
+    std::this_thread::sleep_for(std::chrono::seconds(1));
     return 0;
 }
+     

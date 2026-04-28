@@ -1,11 +1,11 @@
 CXX = g++
 LDFLAGS = -llgpio -pthread
 
-all: pi_main
+all: atc_servos
 
-pi_main: main.o
-	$(CXX) main.o -o pi_main $(LDFLAGS)
-main.o: main.cpp
-	$(CXX) -c main.cpp
+atc_servos: atc_servos.o
+	$(CXX) atc_servos.o -o atc_servos $(LDFLAGS)
+atc_servos.o: atc_servos.cpp
+	$(CXX) -c atc_servos.cpp
 clean:
-	rm -f *.o pi_main
+	rm -f *.o atc_servos

@@ -66,16 +66,22 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     private final GcodeStreamISRDispatcher ISRDispatcher = new GcodeStreamISRDispatcher();
     private GcodeStreamISR moveServoISR = new GcodeStreamISR("servoMoveISR", new GcodeStreamISRBehavior() {
         @Override 
-        public void onBeforeInterrupt() {
+        public void onBeforeInterrupt(String gcodeCmd) {
             backend.dispatchMessage(MessageType.INFO, "BEFORE INTERRUPT");
+               
+            //if(gcodeCmd.contains("X8")) {
+                moveServoISR.setVargs(String.format("%d %d %d -90 90", SERVO_EN_PIN, SERVO_LEFT_PIN, SERVO_RIGHT_PIN));
+;           //} else  {
+            //    moveServoISR.setVargs(String.format("%d %d %d 90 -90", SERVO_EN_PIN, SERVO_LEFT_PIN, SERVO_RIGHT_PIN));
+            //}
         }
         @Override
-        public void onAfterInterrupt(boolean successfulInterrupt) {
+        public void onAfterInterrupt(String gcodeCmd, boolean successfulInterrupt) {
             backend.dispatchMessage(MessageType.INFO, "AFTER INTERRUPT");
         }
         @Override
         public boolean shouldInterrupt(String gcodeCmd) {
-            return gcodeCmd.contains("M3");
+            return gcodeCmd.contains("M5");
         }
     });
     
@@ -88,6 +94,10 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     private GcodeState preATCMachineState = null;
     private int preATCToolId = 1;
 
+    // ATC servp GPIOP pins
+    final private int SERVO_EN_PIN = 18;
+    final private int SERVO_LEFT_PIN = 14;
+    final private int SERVO_RIGHT_PIN = 15;
     // hard-coded absolution ATC tool bit positions in INCHES
     final private Position ATC_POS_1 = new Position(0, 0, 0, ATCUnits);
     final private Position ATC_POS_2 = new Position(0, 0, 0, ATCUnits);
@@ -160,7 +170,7 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         backend = CentralLookup.getDefault().lookup(BackendAPI.class);
         backend.addUGSEventListener(this);
         // handle ISRs 
-        this.moveServoISR.attachInterruptBinary("bin/pi_main");
+        this.moveServoISR.attachInterruptBinary("bin/atc_servos");
         this.ISRDispatcher.attachISR(moveServoISR);
     }
     

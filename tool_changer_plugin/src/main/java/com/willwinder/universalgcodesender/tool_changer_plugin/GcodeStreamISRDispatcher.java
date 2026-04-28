@@ -16,46 +16,6 @@
  */
 package com.willwinder.universalgcodesender.tool_changer_plugin;
 
-/*
-    Template Servo C++ Code:
-#include <iostream>
-#include <lgpio.h>
-#include <unistd.h>
-
-int main() {
-    int pin = 18;     
-    int chip = 4;     // Pi 5 RP1 controller is usually chip 4
-    
-    // 1. Open the chip
-    int handle = lgGpiochipOpen(chip);
-    if (handle < 0) {
-        std::cerr << "Could not open gpiochip 4. Try: sudo ./pi_main" << std::endl;
-        return 1;
-    }
-
-    // 2. Claim the line for output (This wakes up the pin)
-    if (lgGpioClaimOutput(handle, 0, pin, 0) < 0) {
-        std::cerr << "Could not claim BCM 18. It might be in use." << std::endl;
-        lgGpiochipClose(handle);
-        return 1;
-    }
-
-    std::cout << "Success! Moving Servo on BCM 18..." << std::endl;
-
-    // 3. Servo Commands (handle, gpio, pulseWidth, frequency, offset, cycles)
-    lgTxServo(handle, pin, 1000, 50, 0, 0); 
-    sleep(2);
-    
-    lgTxServo(handle, pin, 2000, 50, 0, 0); 
-    sleep(2);
-
-    // 4. Cleanup
-    lgTxServo(handle, pin, 0, 50, 0, 0); 
-    lgGpiochipClose(handle);
-    
-    return 0;
-}
-*/
 
 import com.willwinder.ugs.nbp.lib.lookup.CentralLookup;
 import com.willwinder.universalgcodesender.model.BackendAPI;
@@ -128,11 +88,12 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     private void interruptOnCurrentISR() {
         if(ISRIterator >= 0) { // only interrupt on valid ISR
             try {
+                String cmd = (this.nextCommand != null) ? this.nextCommand.getCommandString() : "";
                 GcodeStreamISR ISR = ISRs.get(ISRIterator);
                 // run the interrupt 
-                ISR.onBeforeInterrupt();
+                ISR.onBeforeInterrupt(cmd);
                 boolean success = ISR.runInterruptBinary();
-                ISR.onAfterInterrupt(success);
+                ISR.onAfterInterrupt(cmd, success);
                 // handle if interrupt fails 
                 if(!success && !backend.isPaused()) {
                     backend.pauseResume(); 
@@ -151,8 +112,11 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandComplete(GcodeCommand command) {
+        if(command == null)
+            return;
         this.gcodeStreamCache.completeCommand(command); // MUST CALL THIS FIRST!
         this.nextCommand = this.gcodeStreamCache.getNextCommandToComplete();
+        backend.dispatchMessage(MessageType.INFO, "completed: " + command.getCommandString() + ", next: " + ((this.nextCommand != null) ? this.nextCommand.getCommandString() : "NULL"));
         // evaluate ISRs for next command
         while(!pollISRs()) {
            interruptOnCurrentISR(); // run the interrupted ISR
@@ -164,6 +128,8 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandSkipped(GcodeCommand command) {
+        if(command == null)
+            return;
         this.gcodeStreamCache.retireCommand(command);
     } 
     
@@ -173,6 +139,8 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandSent(GcodeCommand command) {
+        if(command == null)
+            return;
         this.gcodeStreamCache.retireCommand(command);
     }
     
@@ -227,8 +195,9 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     private int getNextTriggeredISR() {
         // step through ISRs until one is triggered
-        for(int i = ISRIterator+1; i < ISRs.size(); i++) { 
-            if(ISRs.get(i).shouldInterrupt(nextCommand.getCommandString())) {
+        for(int i = ISRIterator+1; i < ISRs.size(); i++) {
+            String cmd = (this.nextCommand != null) ? this.nextCommand.getCommandString() : "";
+            if(ISRs.get(i).shouldInterrupt(cmd)) {
                 return i; // return triggered ISR
             }
         }

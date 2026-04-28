@@ -23,13 +23,15 @@ package com.willwinder.universalgcodesender.tool_changer_plugin;
 public interface GcodeStreamISRBehavior {
      /**
      * @brief A hook that runs before running the ISR. 
+     * @param gcodeCmd The specified G-Code command to interrupt
      */
-    public void onBeforeInterrupt();
+    public void onBeforeInterrupt(String gcodeCmd);
     /**
      * @brief A hook that runs after having successfully run the ISR.
+     * @param gcodeCmd The specified G-Code command to interrupt
      * @param successfulInterrupt Whether or not the binary interrupt run successfully. 
      */
-    public void onAfterInterrupt(boolean successfulInterrupt);
+    public void onAfterInterrupt(String gcodeCmd, boolean successfulInterrupt);
     /**
      * @brief A trigger that returns a conditional that initiates the ISR.
      * The interrupt condition can be implemented by considering the next G-Code command to run. 
