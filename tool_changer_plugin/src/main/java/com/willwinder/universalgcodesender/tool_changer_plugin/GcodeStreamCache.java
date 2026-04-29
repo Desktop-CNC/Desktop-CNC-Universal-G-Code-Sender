@@ -75,9 +75,14 @@ public class GcodeStreamCache {
         try {
             // create stream cache 
             File processedGcode = backend.getProcessedGcodeFile();
+            if(processedGcode != null)
+                backend.dispatchMessage(MessageType.INFO, "PROC FILE: " + processedGcode.toString());
+            else
+                backend.dispatchMessage(MessageType.INFO, "PROC FILE: NULL");
             gcodeStreamCache = new GcodeStreamReader(processedGcode, backend.getCommandCreator());
             // memoize cache 
             GcodeCommand cmd = gcodeStreamCache.getNextCommand();
+            backend.dispatchMessage(MessageType.INFO, "FETCHED 1st CMD: " + cmd.getCommandString());
             while(cmd != null) {
                 commands.add(cmd);
                 cmd = gcodeStreamCache.getNextCommand();

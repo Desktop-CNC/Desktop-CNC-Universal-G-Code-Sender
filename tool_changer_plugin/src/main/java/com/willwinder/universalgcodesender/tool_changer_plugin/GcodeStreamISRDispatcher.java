@@ -87,6 +87,8 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     private void interruptOnCurrentISR() {
         if(ISRIterator >= 0) { // only interrupt on valid ISR
+            
+        
             try {
                 String cmd = (this.nextCommand != null) ? this.nextCommand.getCommandString() : "";
                 GcodeStreamISR ISR = ISRs.get(ISRIterator);

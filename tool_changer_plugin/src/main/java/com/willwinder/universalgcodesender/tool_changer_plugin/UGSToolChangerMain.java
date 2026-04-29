@@ -69,11 +69,11 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         public void onBeforeInterrupt(String gcodeCmd) {
             backend.dispatchMessage(MessageType.INFO, "BEFORE INTERRUPT");
                
-            //if(gcodeCmd.contains("X8")) {
+            if(gcodeCmd.contains("ATC-OPEN")) {
                 moveServoISR.setVargs(String.format("%d %d %d -90 90", SERVO_EN_PIN, SERVO_LEFT_PIN, SERVO_RIGHT_PIN));
-;           //} else  {
-            //    moveServoISR.setVargs(String.format("%d %d %d 90 -90", SERVO_EN_PIN, SERVO_LEFT_PIN, SERVO_RIGHT_PIN));
-            //}
+;           } else if(gcodeCmd.contains("ATC-CLOSE")) {
+                moveServoISR.setVargs(String.format("%d %d %d 90 -90", SERVO_EN_PIN, SERVO_LEFT_PIN, SERVO_RIGHT_PIN));
+            }
         }
         @Override
         public void onAfterInterrupt(String gcodeCmd, boolean successfulInterrupt) {
@@ -81,14 +81,14 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         }
         @Override
         public boolean shouldInterrupt(String gcodeCmd) {
-            return gcodeCmd.contains("M5");
+            return gcodeCmd.contains("ATC-");
         }
     });
     
     // units the processor are defined by 
-    private Units ATCUnits = Units.INCH;
+    private Units ATCUnits = Units.MM;
     // units currently read by the processor
-    private Units currentUnits = null;
+    private Units currentUnits = Units.MM;
 
     // pre ATC-op machine states 
     private GcodeState preATCMachineState = null;
@@ -98,12 +98,13 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     final private int SERVO_EN_PIN = 18;
     final private int SERVO_LEFT_PIN = 14;
     final private int SERVO_RIGHT_PIN = 15;
-    // hard-coded absolution ATC tool bit positions in INCHES
-    final private Position ATC_POS_1 = new Position(0, 0, 0, ATCUnits);
-    final private Position ATC_POS_2 = new Position(0, 0, 0, ATCUnits);
-    final private Position ATC_POS_3 = new Position(0, 0, 0, ATCUnits);
-    // tavel height for spindle for ATC in INCHES
-    final private double TRAVEL_Z = -2;
+    // hard-coded absolution ATC tool bit positions in MM
+    final private Position ATC_POS_1 = new Position(-128.053, -173.235, -123.137, ATCUnits);
+    final private Position ATC_POS_2 = new Position(-86.033, -173.235, -123.137, ATCUnits);
+    final private Position ATC_POS_3 = new Position(-44.137, -173.235, -123.137, ATCUnits);
+    // tavel height for spindle for ATC in MM
+    final private double TRAVEL_Z = -10;
+    final private double ATC_HOVER_Z = -105; // height to hover for tool change in MM
     
     /**
      * @brief ATC travel z height in current units.
@@ -111,6 +112,9 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
      */
     private double getTravelZ() {
         return TRAVEL_Z * UnitUtils.scaleUnits(ATCUnits, currentUnits);
+    }
+    private double getHoverZ() {
+        return ATC_HOVER_Z * UnitUtils.scaleUnits(ATCUnits, currentUnits);
     }
     /**
      * @brief ATC tool bit 1 position in current units. 
@@ -192,36 +196,44 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         result.add("G90");
         result.add("G17");
         result.add("G94");
+        result.add("G4 P0 (ATC-OPEN)");
+        result.add("M5");
+        result.add("G4 P1");
 
         // spindle travels to old ATC tool's slot
-        result.add(String.format("G0 X%.3f Y%.3f Z%.3f", resumePos.x, resumePos.y, getTravelZ()));
-        result.add(String.format("G0 X%.3f Y%.3f Z%.3f", prevATCPos.x, prevATCPos.y, getTravelZ()));
+        result.add(String.format("G53 G0 Z%.3f", getTravelZ()));
+        result.add(String.format("G53 G0 X%.3f Y%.3f Z%.3f", prevATCPos.x, prevATCPos.y, getTravelZ()));
+        result.add(String.format("G53 G0 X%.3f Y%.3f Z%.3f", prevATCPos.x, prevATCPos.y, getHoverZ()));
         // spindle plunges on old ATC tool's slot
-        result.add("M4 S3500");
+        
         result.add("G4 P1");
-        result.add(String.format("G1 Z%.3f F200", prevATCPos.z));
-        result.add(String.format("G0 Z%.3f", getTravelZ()));
+        result.add("M4 S7000");
+        result.add(String.format("G53 G1 Z%.3f F200", prevATCPos.z));
+        result.add("M5");
+        result.add(String.format("G53 G0 Z%.3f", getTravelZ()));
 
         // spindle speed zero and dwell
-        result.add("M4 S0");
         result.add("G4 P1");
 
         // spindle travels to new ATC tool's slot 
-        result.add(String.format("G0 X%.3f Y%.3f Z%.3f", newATCPos.x, newATCPos.y, getTravelZ()));
+        result.add(String.format("G53 G0 X%.3f Y%.3f Z%.3f", newATCPos.x, newATCPos.y, getTravelZ()));
+        result.add(String.format("G53 G0 X%.3f Y%.3f Z%.3f", newATCPos.x, newATCPos.y, getHoverZ()));
         // spindle plunges on new ATC tool's slot 
-        result.add("M3 S3500");
+        
         result.add("G4 P1");
-        result.add(String.format("G1 Z%.3f F200", newATCPos.z));
-        result.add(String.format("G0 Z%.3f", getTravelZ()));
+        result.add("M3 S6000");
+        result.add(String.format("G53 G1 Z%.3f F200", newATCPos.z));
+        result.add("M5");
+        result.add(String.format("G53 G0 Z%.3f", getTravelZ()));
 
         // spindle speed zero and dwell
-        result.add("M5 S0");
-        result.add("G4 P1");
-
+        result.add("G4 P1 (ATC-CLOSE)");
+        result.add("G54");
+        
         // spindle travels to resume position
-        result.add(String.format("G0 X%.3f Y%.3f Z%.3f", resumePos.x, resumePos.y, getTravelZ()));
+        result.add(String.format("G0 X%.3f Y%.3f", resumePos.x, resumePos.y));
         result.add(preATCMachineState.toAccessoriesCode()); // feeds and speeds
-        result.add(String.format("G0 X%.3f Y%.3f Z%.3f", resumePos.x, resumePos.y, resumePos.z));
+        result.add(String.format("G0 Z%.3f", resumePos.z));
         // restore machine config codes
         result.add(preATCMachineState.machineStateCode()); // config codes 
         // return results
@@ -232,7 +244,6 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     public List<String> processCommand(String command, GcodeState state) {
         // save all machine states 
         preATCMachineState = state.copy();
-        System.out.println(preATCMachineState.currentPoint.getUnits());
         currentUnits = preATCMachineState.currentPoint.getUnits();
         // processed commands from incoming `command` args
         List<String> procCmds = new ArrayList<String>();
@@ -265,6 +276,7 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         procCmds.add(preATCTokens);
         procCmds.addAll(autoToolChangeCmds);
         procCmds.add(postATCTokens);
+        backend.dispatchMessage(MessageType.INFO, "Processed Commands: " + procCmds.toString());
         // return processed commands
         return procCmds;
     }

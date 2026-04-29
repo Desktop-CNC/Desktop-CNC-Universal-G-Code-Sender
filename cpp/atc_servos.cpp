@@ -241,11 +241,11 @@ class ServoSg90Group {
 
 int main(int argc, char* argv[]) {
     // program arguments 
-    int en_pin = atoi(argv[1]);
-    int left_servo_pin = atoi(argv[2]);
-    int right_servo_pin = atoi(argv[3]);
-    int init_degrees = atoi(argv[4]);
-    int final_degrees = atoi(argv[5]); 
+    int en_pin = 18;//atoi(argv[1]);
+    int left_servo_pin = 14;//atoi(argv[2]);
+    int right_servo_pin = 15;//atoi(argv[3]);
+    int init_degrees = -90;//atoi(argv[4]);
+    int final_degrees = 90;//atoi(argv[5]); 
 
     const int CHIP = 4;
     const int HANDLER = lgGpiochipOpen(CHIP);
