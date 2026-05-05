@@ -42,6 +42,7 @@ import org.openide.util.NbBundle.Messages;
 // g-code pre-processing imports
 import com.willwinder.universalgcodesender.gcode.processors.CommandProcessor;
 import com.willwinder.universalgcodesender.gcode.GcodeState;
+import com.willwinder.universalgcodesender.model.GUIBackend;
 
 @ActionID(
         category = "Tools",
@@ -51,7 +52,7 @@ import com.willwinder.universalgcodesender.gcode.GcodeState;
         displayName = "#CTL_UGSToolChanger"
 )
 // This puts a menu item under the main "Tools" -> "UGS Plugins" menu
-@ActionReference(path = "Menu/Tools/UGS Plugins", position = 300) 
+@ActionReference(path = "Menu/Machine/Actions", position = 300) 
 @Messages("CTL_UGSToolChanger=Toggle Tool Changer")
 /**
  * @author Matthew Papesh
@@ -61,6 +62,7 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     private static final Logger LOG = Logger.getLogger(UGSToolChangerMain.class.getName());
     private boolean isActive = false; // flag for plugin activity
     private final BackendAPI backend;
+    private boolean processFile = false;
     
     // handles UGS-level G-Code ISRs
     private final GcodeStreamISRDispatcher ISRDispatcher = new GcodeStreamISRDispatcher();
@@ -176,6 +178,7 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         // handle ISRs 
         this.moveServoISR.attachInterruptBinary("bin/atc_servos");
         this.ISRDispatcher.attachISR(moveServoISR);
+        toggleATC(this.isActive, false);
     }
     
     /**
@@ -242,6 +245,10 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     
     @Override
     public List<String> processCommand(String command, GcodeState state) {
+        if(processFile) {
+            processFile = false;
+            backend.dispatchMessage(MessageType.INFO, "\n\n *** Processing for ATC! ***\n");
+        }
         // save all machine states 
         preATCMachineState = state.copy();
         currentUnits = preATCMachineState.currentPoint.getUnits();
@@ -276,7 +283,7 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         procCmds.add(preATCTokens);
         procCmds.addAll(autoToolChangeCmds);
         procCmds.add(postATCTokens);
-        backend.dispatchMessage(MessageType.INFO, "Processed Commands: " + procCmds.toString());
+        //backend.dispatchMessage(MessageType.INFO, "Processed Commands: " + procCmds.toString());
         // return processed commands
         return procCmds;
     }
@@ -297,34 +304,62 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     public void reset() {}
     
     /**
+     * @brief Toggle the ATC plugin on or off.
+     * @param enable the ATC plugin
+     */
+    private void toggleATC(boolean enable, boolean mute) {     
+         
+   
+        // try to append a g-code pre-processor for (i.e. tool changer)
+        try {
+            // toggle adding this plugin to G-Code pre-processor pipeline 
+            String statusMsg = "";
+            if(enable) {
+                statusMsg = "\n\n*** UGS Tool Changer Plugin Enabled!\n";
+                
+                this.ISRDispatcher.toggle(true);
+                backend.applyCommandProcessor(this);
+            } else {
+                statusMsg = "\n\n*** UGS Tool Changer Plugin Disabled!\n";
+                this.ISRDispatcher.toggle(false);
+                processFile = true;
+                backend.removeCommandProcessor(this);
+            }
+            // successful plugin toggle; send notifying event to UGS
+            if(!mute)
+                backend.dispatchMessage(MessageType.INFO, statusMsg); 
+        } catch(Exception e) {
+            // do something if exception thrown
+            LOG.warning(e.toString()); // print exception to UGS console as warning
+        }
+        
+        processFile = enable;
+    }
+    
+    /**
      * @brief Adds a command processor and applies it to currently loaded program.
      * @param commandProcessor a command processor.
      * @throws Exception
      */
     @Override
     public void actionPerformed(ActionEvent event) {
-        isActive = !isActive; // toggle plugin activity upon initiatiing from performing action
-        // try to append a g-code pre-processor for (i.e. tool changer)
-        try {
-            // toggle adding this plugin to G-Code pre-processor pipeline 
-            String statusMsg = "";
-            if(isActive) {
-                statusMsg = "*** UGS Tool Changer Plugin Enabled!\n";
-                backend.applyCommandProcessor(this);
-            } else {
-                statusMsg = "*** UGS Tool Changer Plugin Disabled!\n";
-                backend.removeCommandProcessor(this);
-            }
-            // successful plugin toggle; send notifying event to UGS
-            backend.dispatchMessage(MessageType.INFO, statusMsg);
-        } catch(Exception e) {
-            // do something if exception thrown
-            LOG.warning(e.toString()); // print exception to UGS console as warning
+        if(!backend.isConnected()) {
+            isActive = false;
+            return;
         }
+        isActive = !isActive;
+        toggleATC(isActive, false);
+   
     }
     
     @Override
     public void UGSEvent(UGSEvent event) {
         
+        if(event instanceof GUIBackend && this.isActive && event.toString().contains("Setting gcode file")) {
+            try {
+                backend.reloadGcodeFile();
+                processFile = false;
+            } catch(Exception e) {}
+        }
     }
 }

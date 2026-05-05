@@ -48,6 +48,13 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
     private GcodeCommand nextCommand = null;
     private int ISRDwellCmdId = -1;
     private int ISRIterator = -1;
+    private boolean isActive = false;
+    
+    public void toggle(boolean enable) {
+        isActive = enable;
+        if(!enable)
+            this.stop();
+    }
     
     /**
      * @brief Creates a `GcodeStreamISRDispatcher` instance. 
@@ -114,7 +121,7 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandComplete(GcodeCommand command) {
-        if(command == null)
+        if(command == null || !isActive)
             return;
         this.gcodeStreamCache.completeCommand(command); // MUST CALL THIS FIRST!
         this.nextCommand = this.gcodeStreamCache.getNextCommandToComplete();
@@ -130,7 +137,7 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandSkipped(GcodeCommand command) {
-        if(command == null)
+        if(command == null || !isActive)
             return;
         this.gcodeStreamCache.retireCommand(command);
     } 
@@ -141,7 +148,7 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     @Override 
     public void commandSent(GcodeCommand command) {
-        if(command == null)
+        if(command == null || !isActive)
             return;
         this.gcodeStreamCache.retireCommand(command);
     }
@@ -197,7 +204,7 @@ public class GcodeStreamISRDispatcher implements ControllerListener {
      */
     private int getNextTriggeredISR() {
         // step through ISRs until one is triggered
-        for(int i = ISRIterator+1; i < ISRs.size(); i++) {
+        for(int i = ISRIterator+1; i < ISRs.size() && isActive; i++) {
             String cmd = (this.nextCommand != null) ? this.nextCommand.getCommandString() : "";
             if(ISRs.get(i).shouldInterrupt(cmd)) {
                 return i; // return triggered ISR
