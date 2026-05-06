@@ -32,53 +32,53 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Represents an Interrupt Service Routine (ISR) for G-Code Streaming. This will run 
- * when specific conditions are meant while steaming G-Code commands. This serves as a G-Code Stream ISR 
- * strategy interface to the `GcodeStreamISRDispatcher` as a strategy design pattern. 
+ * Represents an Interrupt Service Routine (DHS) for G-Code Streaming. This will run 
+ * when specific conditions are meant while steaming G-Code commands. This serves as a G-Code Stream DHS 
+ * strategy interface to the `GcodeStreamDHSDispatcher` as a strategy design pattern. 
  * @author matthew-papesh
  */
-public class GcodeStreamISR {
+public class GcodeStreamDHS {
     private final BackendAPI backend;
     private File interruptBinary = null;
     private Process interruptProcess = null;
     private ArrayList<String> binaryVargs = new ArrayList<>();
-    private final String ISR_ID;
+    private final String DHS_ID;
     private final String NBM_PKG_NAME;
-    private final GcodeStreamISRBehavior TRANSITIONS_BEHAVIOR;
+    private final GcodeStreamDHSBehavior TRANSITIONS_BEHAVIOR;
     
-    public GcodeStreamISR(String ISR_ID, GcodeStreamISRBehavior behavior) {
+    public GcodeStreamDHS(String DHS_ID, GcodeStreamDHSBehavior behavior) {
         // retrieve backend from UGS Platform
         this.backend = CentralLookup.getDefault().lookup(BackendAPI.class);
-        this.ISR_ID = ISR_ID; // id of ISR
+        this.DHS_ID = DHS_ID; // id of DHS
         ModuleInfo nbm_pkg_info = Modules.getDefault().ownerOf(this.getClass());
         this.NBM_PKG_NAME = nbm_pkg_info.getCodeNameBase();
         this.TRANSITIONS_BEHAVIOR = behavior;
     }
     
-    public GcodeStreamISR(GcodeStreamISRBehavior behavior) {
+    public GcodeStreamDHS(GcodeStreamDHSBehavior behavior) {
         // retrieve backend from UGS Platform
         this.backend = CentralLookup.getDefault().lookup(BackendAPI.class);
-        this.ISR_ID = "no_id"; // id of ISR
+        this.DHS_ID = "no_id"; // id of DHS
         ModuleInfo nbm_pkg_info = Modules.getDefault().ownerOf(this.getClass());
         this.NBM_PKG_NAME = nbm_pkg_info.getCodeNameBase();
         this.TRANSITIONS_BEHAVIOR = behavior;
     }
     
     /**
-     * @brief The ISR unique identifier
-     * @return The ISR ID
+     * @brief The DHS unique identifier
+     * @return The DHS ID
      */
     public String getId() {
-        return ISR_ID;
+        return DHS_ID;
     }
     /**
-     * @brief A hook that runs before running the ISR. 
+     * @brief A hook that runs before running the DHS. 
      */
     public void onBeforeInterrupt(String gcodeCmd) {
         TRANSITIONS_BEHAVIOR.onBeforeInterrupt(gcodeCmd);
     }
     /**
-     * @brief A hook that runs after having successfully run the ISR.
+     * @brief A hook that runs after having successfully run the DHS.
      * @param successfulInterrupt Whether or not the binary interrupt run successfully. 
      */
     public void onAfterInterrupt(String gcodeCmd, boolean successfulInterrupt) {
@@ -86,7 +86,7 @@ public class GcodeStreamISR {
     }
     
     /**
-     * @brief Attaches a binary executable to run during the interrupt of the ISR. 
+     * @brief Attaches a binary executable to run during the interrupt of the DHS. 
      * On successful completion of running the binary, the interrupt will end. 
      * @note The binary path root directory is at `/src/main/releases`
      * @note The binary path must be relative to this root; the binary will be packaged as part of the plugin NBM when built. 
@@ -117,7 +117,7 @@ public class GcodeStreamISR {
     }
     
     /**
-     * @brief Executes the attached binary executable. The binary is attached to this ISR by calling the `attachInterruptBinary` method. 
+     * @brief Executes the attached binary executable. The binary is attached to this DHS by calling the `attachInterruptBinary` method. 
      * @note This method is designed as a blocking method. 
      * @return Wether or not the interrupt binary run successfully; no binary run is still a successful outcome.
      */
@@ -147,8 +147,8 @@ public class GcodeStreamISR {
                
             } catch(Exception e) {
                 // send exception warning message 
-                String errHeader = String.format("GcodeStreamISR: %s, failed.", getId());
-                String errBinaryHeader = (interruptBinary == null || !interruptBinary.exists()) ? "No ISR Binary Found." : "Binary exit code: " + String.valueOf(binaryExitCode);
+                String errHeader = String.format("GcodeStreamDHS: %s, failed.", getId());
+                String errBinaryHeader = (interruptBinary == null || !interruptBinary.exists()) ? "No DHS Binary Found." : "Binary exit code: " + String.valueOf(binaryExitCode);
                 String errExceptionHeader = String.format("Found Execption: %s", e.getMessage());
                 String exceptionMsg = String.format("Machine HOLD => [ %s %s => %s ]\n", errHeader, errBinaryHeader, errExceptionHeader);
                 backend.dispatchMessage(MessageType.ERROR, exceptionMsg);
@@ -167,11 +167,11 @@ public class GcodeStreamISR {
     }
     
     /**
-     * @brief A trigger that returns a conditional that initiates the ISR.
+     * @brief A trigger that returns a conditional that initiates the DHS.
      * The interrupt condition can be implemented by considering the next G-Code command to run. 
-     * Should this method return true, the ISR will interrupt before running the specified G-Code command.
+     * Should this method return true, the DHS will interrupt before running the specified G-Code command.
      * @param gcodeCmd The specified G-Code command to interrupt
-     * @return Whether or not the ISR can initiate. 
+     * @return Whether or not the DHS can initiate. 
      */
     public boolean shouldInterrupt(String gcodeCmd) {
         return TRANSITIONS_BEHAVIOR.shouldInterrupt(gcodeCmd);

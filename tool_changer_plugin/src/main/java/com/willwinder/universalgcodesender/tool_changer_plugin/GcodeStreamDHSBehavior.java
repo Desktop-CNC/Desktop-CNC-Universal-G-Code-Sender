@@ -20,24 +20,24 @@ package com.willwinder.universalgcodesender.tool_changer_plugin;
  *
  * @author matthew-papesh
  */
-public interface GcodeStreamISRBehavior {
+public interface GcodeStreamDHSBehavior {
      /**
-     * @brief A hook that runs before running the ISR. 
+     * @brief A hook that runs before running the DHS. 
      * @param gcodeCmd The specified G-Code command to interrupt
      */
     public void onBeforeInterrupt(String gcodeCmd);
     /**
-     * @brief A hook that runs after having successfully run the ISR.
+     * @brief A hook that runs after having successfully run the DHS.
      * @param gcodeCmd The specified G-Code command to interrupt
      * @param successfulInterrupt Whether or not the binary interrupt run successfully. 
      */
     public void onAfterInterrupt(String gcodeCmd, boolean successfulInterrupt);
     /**
-     * @brief A trigger that returns a conditional that initiates the ISR.
+     * @brief A trigger that returns a conditional that initiates the DHS.
      * The interrupt condition can be implemented by considering the next G-Code command to run. 
-     * Should this method return true, the ISR will interrupt before running the specified G-Code command.
+     * Should this method return true, the DHS will interrupt before running the specified G-Code command.
      * @param gcodeCmd The specified G-Code command to interrupt
-     * @return Whether or not the ISR can initiate. 
+     * @return Whether or not the DHS can initiate. 
      */
     public boolean shouldInterrupt(String gcodeCmd);
 }

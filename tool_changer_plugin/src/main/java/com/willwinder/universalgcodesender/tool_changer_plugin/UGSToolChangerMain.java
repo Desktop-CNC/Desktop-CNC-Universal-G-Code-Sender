@@ -64,17 +64,17 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
     private final BackendAPI backend;
     private boolean processFile = false;
     
-    // handles UGS-level G-Code ISRs
-    private final GcodeStreamISRDispatcher ISRDispatcher = new GcodeStreamISRDispatcher();
-    private GcodeStreamISR moveServoISR = new GcodeStreamISR("servoMoveISR", new GcodeStreamISRBehavior() {
+    // handles UGS-level G-Code DHSs
+    private final GcodeStreamDHSDispatcher DHSDispatcher = new GcodeStreamDHSDispatcher();
+    private GcodeStreamDHS moveServoDHS = new GcodeStreamDHS("servoMoveDHS", new GcodeStreamDHSBehavior() {
         @Override 
         public void onBeforeInterrupt(String gcodeCmd) {
             backend.dispatchMessage(MessageType.INFO, "BEFORE INTERRUPT");
                
             if(gcodeCmd.contains("ATC-OPEN")) {
-                moveServoISR.setVargs(String.format("%d %d %d -90 90", SERVO_EN_PIN, SERVO_LEFT_PIN, SERVO_RIGHT_PIN));
+                moveServoDHS.setVargs(String.format("%d %d %d -90 90", SERVO_EN_PIN, SERVO_LEFT_PIN, SERVO_RIGHT_PIN));
 ;           } else if(gcodeCmd.contains("ATC-CLOSE")) {
-                moveServoISR.setVargs(String.format("%d %d %d 90 -90", SERVO_EN_PIN, SERVO_LEFT_PIN, SERVO_RIGHT_PIN));
+                moveServoDHS.setVargs(String.format("%d %d %d 90 -90", SERVO_EN_PIN, SERVO_LEFT_PIN, SERVO_RIGHT_PIN));
             }
         }
         @Override
@@ -175,9 +175,9 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
         // retrieve backend from UGS Platform and attach plugin as a listener to UGS
         backend = CentralLookup.getDefault().lookup(BackendAPI.class);
         backend.addUGSEventListener(this);
-        // handle ISRs 
-        this.moveServoISR.attachInterruptBinary("bin/atc_servos");
-        this.ISRDispatcher.attachISR(moveServoISR);
+        // handle DHSs 
+        this.moveServoDHS.attachInterruptBinary("bin/atc_servos");
+        this.DHSDispatcher.attachDHS(moveServoDHS);
         toggleATC(this.isActive, false);
     }
     
@@ -317,11 +317,11 @@ public final class UGSToolChangerMain extends AbstractAction implements UGSEvent
             if(enable) {
                 statusMsg = "\n\n*** UGS Tool Changer Plugin Enabled!\n";
                 
-                this.ISRDispatcher.toggle(true);
+                this.DHSDispatcher.toggle(true);
                 backend.applyCommandProcessor(this);
             } else {
                 statusMsg = "\n\n*** UGS Tool Changer Plugin Disabled!\n";
-                this.ISRDispatcher.toggle(false);
+                this.DHSDispatcher.toggle(false);
                 processFile = true;
                 backend.removeCommandProcessor(this);
             }
